@@ -123,6 +123,10 @@
             padding-top: 15px;
         }
         .footer span { color: #f472b6; }
+        .error-text {
+            color: #f87171;
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
@@ -152,29 +156,68 @@
 
     <script>
         let currentCoin = 'bitcoin';
+        let coinIdMap = {
+            'bitcoin': 'BTC',
+            'ethereum': 'ETH',
+            'solana': 'SOL',
+            'dodo': 'DODO'
+        };
+
+        // Функция получения цены через Binance (резервный вариант)
+        async function getPriceFromBinance(symbol) {
+            try {
+                const response = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}USDT`);
+                const data = await response.json();
+                return parseFloat(data.price);
+            } catch {
+                return null;
+            }
+        }
+
+        // Основная функция получения цены
+        async function getPrice(coinId) {
+            const symbol = coinIdMap[coinId];
+            
+            // Пробуем CoinGecko
+            try {
+                const response = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`);
+                const data = await response.json();
+                if (data[coinId] && data[coinId].usd) {
+                    return data[coinId].usd;
+                }
+            } catch {
+                // Если CoinGecko не работает, пробуем Binance
+                const binancePrice = await getPriceFromBinance(symbol);
+                if (binancePrice) {
+                    return binancePrice;
+                }
+            }
+            return null;
+        }
 
         async function loadCoin() {
             const coin = document.getElementById('coinSelect').value;
             currentCoin = coin;
-            document.getElementById('coinLabel').textContent = coin.toUpperCase() + '/USDT';
+            const symbol = coinIdMap[coin];
+            document.getElementById('coinLabel').textContent = symbol + '/USDT';
             await fetchData(coin);
         }
 
         async function fetchData(coin) {
             try {
-                const response = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${coin}&vs_currencies=usd`);
-                const data = await response.json();
-                const price = data[coin]?.usd;
-
+                const price = await getPrice(coin);
+                
                 if (!price) {
-                    document.getElementById('price-list').innerHTML = 'Нет данных для этой монеты';
+                    document.getElementById('price-list').innerHTML = '<div class="error-text">⚠️ Нет данных. Попробуйте позже.</div>';
+                    document.getElementById('spread').textContent = '💰 Спред: нет данных';
                     return;
                 }
 
+                // Имитация цен на разных биржах (для демонстрации спреда)
                 const prices = {
                     "Binance": price,
-                    "Bybit": price * 0.999,
-                    "OKX": price * 1.001
+                    "Bybit": price * (1 + (Math.random() - 0.5) * 0.002),
+                    "OKX": price * (1 + (Math.random() - 0.5) * 0.002)
                 };
 
                 const values = Object.values(prices);
@@ -192,10 +235,12 @@
                 document.getElementById('price-list').innerHTML = html;
                 document.getElementById('spread').textContent = '💰 Спред: $' + (maxPrice - minPrice).toFixed(2);
             } catch (e) {
-                document.getElementById('price-list').innerHTML = 'Ошибка загрузки данных';
+                document.getElementById('price-list').innerHTML = '<div class="error-text">⚠️ Ошибка загрузки. Попробуйте позже.</div>';
+                document.getElementById('spread').textContent = '💰 Спред: ошибка';
             }
         }
 
+        // Загрузка при старте
         fetchData('bitcoin');
         setInterval(function() {
             fetchData(currentCoin);
