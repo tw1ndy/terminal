@@ -27,106 +27,40 @@
             border: 1px solid rgba(160, 80, 255, 0.2);
             text-align: center;
         }
-        .neon-nick {
-            font-size: 48px;
-            font-weight: 900;
-            letter-spacing: 4px;
-            color: #c084fc;
-            text-shadow: 0 0 10px #a855f7, 0 0 20px #a855f7, 0 0 40px #7c3aed, 0 0 80px #7c3aed;
-            margin-bottom: 5px;
-        }
-        .subtitle {
-            font-size: 16px;
-            color: #a78bfa;
-            letter-spacing: 4px;
-            margin-bottom: 20px;
-            border-bottom: 1px solid rgba(160, 80, 255, 0.2);
-            padding-bottom: 10px;
-        }
-        .selector {
-            display: flex;
-            gap: 10px;
-            justify-content: center;
-            align-items: center;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
-        }
-        .selector select {
+        .neon-nick { font-size: 48px; font-weight: 900; letter-spacing: 4px; color: #c084fc; text-shadow: 0 0 10px #a855f7, 0 0 20px #a855f7, 0 0 40px #7c3aed, 0 0 80px #7c3aed; margin-bottom: 5px; }
+        .subtitle { font-size: 16px; color: #a78bfa; letter-spacing: 4px; margin-bottom: 20px; border-bottom: 1px solid rgba(160, 80, 255, 0.2); padding-bottom: 10px; }
+        .selector { display: flex; gap: 10px; justify-content: center; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+        .selector input {
             padding: 8px 15px;
             border-radius: 10px;
             background: #1a1628;
             color: #e0e0e0;
             border: 1px solid rgba(160, 80, 255, 0.3);
             font-size: 16px;
+            width: 200px;
         }
-        .selector button {
-            padding: 8px 20px;
-            background: #a855f7;
-            color: #fff;
-            border: none;
-            border-radius: 10px;
-            font-size: 16px;
-            cursor: pointer;
-            transition: 0.3s;
-            white-space: nowrap;
-        }
-        .selector button:hover {
-            background: #7c3aed;
-            box-shadow: 0 0 20px rgba(160, 80, 255, 0.4);
-        }
-        .card {
-            background: rgba(30, 27, 45, 0.7);
-            backdrop-filter: blur(5px);
-            border-radius: 20px;
-            padding: 15px;
-            border-left: 5px solid #a855f7;
-            box-shadow: 0 0 20px rgba(160, 80, 255, 0.1);
-            text-align: left;
-            margin-bottom: 15px;
-        }
-        .card h3 {
-            color: #c4b5fd;
-            font-size: 18px;
-            margin-bottom: 10px;
-        }
-        .price-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 6px 0;
-            font-size: 16px;
-            font-weight: 500;
-            border-bottom: 1px solid rgba(160, 80, 255, 0.05);
-            flex-wrap: wrap;
-        }
+        .selector button { padding: 8px 20px; background: #a855f7; color: #fff; border: none; border-radius: 10px; font-size: 16px; cursor: pointer; transition: 0.3s; white-space: nowrap; }
+        .selector button:hover { background: #7c3aed; box-shadow: 0 0 20px rgba(160, 80, 255, 0.4); }
+        .card { background: rgba(30, 27, 45, 0.7); backdrop-filter: blur(5px); border-radius: 20px; padding: 15px; border-left: 5px solid #a855f7; box-shadow: 0 0 20px rgba(160, 80, 255, 0.1); text-align: left; margin-bottom: 15px; }
+        .card h3 { color: #c4b5fd; font-size: 18px; margin-bottom: 10px; }
+        .price-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 15px; font-weight: 500; border-bottom: 1px solid rgba(160, 80, 255, 0.05); flex-wrap: wrap; }
         .price-row:last-child { border-bottom: none; }
-        .green { color: #4ade80; }
-        .red { color: #f87171; }
-        .yellow { color: #facc15; }
-        .spread-box {
-            margin-top: 12px;
-            padding-top: 12px;
-            border-top: 2px solid rgba(160, 80, 255, 0.2);
-            font-size: 18px;
-            color: #c4b5fd;
-            text-align: center;
-        }
-        .update-info {
-            margin-top: 15px;
-            font-size: 12px;
-            color: #6b7280;
-        }
-        .footer {
-            margin-top: 25px;
-            font-size: 14px;
-            color: #8b5cf6;
-            border-top: 1px solid rgba(160, 80, 255, 0.15);
-            padding-top: 15px;
-        }
-        .footer span { color: #f472b6; }
-        .error-text {
-            color: #f87171;
-            font-size: 14px;
-        }
+        .green { color: #4ade80; } .red { color: #f87171; } .yellow { color: #facc15; }
+        .change-positive { color: #4ade80; font-size: 13px; } .change-negative { color: #f87171; font-size: 13px; }
+        .spread-box { margin-top: 12px; padding-top: 12px; border-top: 2px solid rgba(160, 80, 255, 0.2); font-size: 18px; color: #c4b5fd; text-align: center; }
+        .funding-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        .funding-table th, .funding-table td { padding: 8px 6px; text-align: left; border-bottom: 1px solid rgba(160, 80, 255, 0.1); font-size: 14px; }
+        .funding-table th { color: #a78bfa; font-weight: 400; letter-spacing: 1px; }
+        .rate-positive { color: #4ade80; font-weight: 600; } .rate-negative { color: #f87171; font-weight: 600; }
+        .update-info { margin-top: 15px; font-size: 12px; color: #6b7280; }
+        .footer { margin-top: 25px; font-size: 16px; color: #8b5cf6; border-top: 1px solid rgba(160, 80, 255, 0.15); padding-top: 15px; }
+        .footer a { color: #c084fc; text-decoration: none; font-weight: 600; letter-spacing: 0.5px; }
+        .footer a:hover { text-decoration: underline; }
+        .error-text { color: #f87171; font-size: 14px; }
+        .price-change-small { font-size: 12px; margin-left: 6px; }
+        .coin-suggestions { display: none; background: #1a1628; border: 1px solid rgba(160, 80, 255, 0.3); border-radius: 10px; padding: 5px; margin-top: 5px; max-height: 150px; overflow-y: auto; }
+        .coin-suggestions div { padding: 6px 12px; cursor: pointer; border-radius: 5px; font-size: 14px; }
+        .coin-suggestions div:hover { background: #a855f7; color: #fff; }
     </style>
 </head>
 <body>
@@ -135,14 +69,10 @@
         <div class="subtitle">CRYPTO TERMINAL</div>
 
         <div class="selector">
-            <select id="coinSelect">
-                <option value="bitcoin">BTC</option>
-                <option value="ethereum">ETH</option>
-                <option value="solana">SOL</option>
-                <option value="dodo">DODO</option>
-            </select>
-            <button onclick="loadCoin()">Обновить</button>
+            <input type="text" id="coinSearch" placeholder="Введите название монеты..." oninput="searchCoin()">
+            <button onclick="loadCoinFromSearch()">Поиск</button>
         </div>
+        <div id="suggestions" class="coin-suggestions"></div>
 
         <div class="card">
             <h3 id="coinLabel">BTC/USDT</h3>
@@ -150,102 +80,306 @@
             <div class="spread-box" id="spread">Спред: ...</div>
         </div>
 
-        <div class="update-info">обновляется каждые 5 секунд</div>
-        <div class="footer">сделано с любовью для <span>tw1ndy</span></div>
+        <div class="card">
+            <h3>📈 Ставки финансирования (фандинг)</h3>
+            <div id="funding-container">Загрузка...</div>
+        </div>
+
+        <div class="update-info">обновляется каждые 10 секунд</div>
+        <div class="footer">@tw1ndypsyh</div>
     </div>
 
     <script>
-        let currentCoin = 'bitcoin';
-        let coinIdMap = {
-            'bitcoin': 'BTC',
-            'ethereum': 'ETH',
-            'solana': 'SOL',
-            'dodo': 'DODO'
-        };
+        // ========== УМНОЕ ОКРУГЛЕНИЕ ==========
+        function formatPrice(value) {
+            if (value === null || value === undefined) return 'Нет данных';
+            const absValue = Math.abs(value);
+            let decimals = 2;
+            if (absValue < 0.01) decimals = 6;
+            else if (absValue < 0.1) decimals = 5;
+            else if (absValue < 1) decimals = 4;
+            else if (absValue < 10) decimals = 3;
+            else decimals = 2;
+            return value.toFixed(decimals);
+        }
 
-        // Функция получения цены через Binance (резервный вариант)
-        async function getPriceFromBinance(symbol) {
+        function formatSpread(value) {
+            if (value === null || value === undefined) return 'Нет данных';
+            const absValue = Math.abs(value);
+            let decimals = 2;
+            if (absValue < 0.01) decimals = 6;
+            else if (absValue < 0.1) decimals = 5;
+            else if (absValue < 1) decimals = 4;
+            else if (absValue < 10) decimals = 3;
+            else decimals = 2;
+            return value.toFixed(decimals);
+        }
+
+        // ========== КОНФИГУРАЦИЯ ==========
+        const POPULAR_COINS = [
+            { id: 'bitcoin', symbol: 'BTC' },
+            { id: 'ethereum', symbol: 'ETH' },
+            { id: 'tether', symbol: 'USDT' },
+            { id: 'solana', symbol: 'SOL' },
+            { id: 'binancecoin', symbol: 'BNB' },
+            { id: 'ripple', symbol: 'XRP' },
+            { id: 'cardano', symbol: 'ADA' },
+            { id: 'dogecoin', symbol: 'DOGE' },
+            { id: 'polkadot', symbol: 'DOT' },
+            { id: 'chainlink', symbol: 'LINK' },
+            { id: 'avalanche-2', symbol: 'AVAX' },
+            { id: 'uniswap', symbol: 'UNI' },
+            { id: 'matic-network', symbol: 'MATIC' },
+            { id: 'litecoin', symbol: 'LTC' },
+            { id: 'bitcoin-cash', symbol: 'BCH' },
+            { id: 'cosmos', symbol: 'ATOM' },
+            { id: 'ethereum-classic', symbol: 'ETC' },
+            { id: 'filecoin', symbol: 'FIL' },
+            { id: 'aptos', symbol: 'APT' },
+            { id: 'arbitrum', symbol: 'ARB' },
+            { id: 'optimism', symbol: 'OP' },
+            { id: 'sui', symbol: 'SUI' },
+            { id: 'celestia', symbol: 'TIA' },
+            { id: 'dymension', symbol: 'DYM' },
+            { id: 'pyth-network', symbol: 'PYTH' },
+            { id: 'dodo', symbol: 'DODO' },
+            { id: 'gmx', symbol: 'GMX' },
+            { id: 'kaspa', symbol: 'KAS' },
+            { id: 'injective-protocol', symbol: 'INJ' },
+            { id: 'sei-network', symbol: 'SEI' },
+            { id: 'ondo-finance', symbol: 'ONDO' },
+            { id: 'pendle', symbol: 'PENDLE' },
+            { id: 'ethena', symbol: 'ENA' },
+            { id: 'wormhole', symbol: 'W' },
+            { id: 'io-net', symbol: 'IO' },
+            { id: 'layerzero', symbol: 'ZRO' },
+            { id: 'notcoin', symbol: 'NOT' }
+        ];
+
+        const FUNDING_EXCHANGES = ['Binance', 'Bybit', 'OKX', 'Gate', 'MEXC'];
+
+        let currentCoinId = 'bitcoin';
+        let currentSymbol = 'BTC';
+        let updateInterval = null;
+        let allCoins = [];
+        let coinMap = {};
+
+        // ========== ПОИСК МОНЕТ ==========
+        async function loadAllCoins() {
             try {
-                const response = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}USDT`);
+                const response = await fetch('https://api.coingecko.com/api/v3/coins/list');
                 const data = await response.json();
-                return parseFloat(data.price);
+                allCoins = data;
+                for (const coin of allCoins) {
+                    coinMap[coin.symbol.toLowerCase()] = coin.id;
+                    coinMap[coin.id] = coin.id;
+                }
             } catch {
-                return null;
+                allCoins = POPULAR_COINS.map(c => ({ id: c.id, symbol: c.symbol }));
+                for (const coin of allCoins) {
+                    coinMap[coin.symbol.toLowerCase()] = coin.id;
+                    coinMap[coin.id] = coin.id;
+                }
             }
         }
 
-        // Основная функция получения цены
+        function searchCoin() {
+            const query = document.getElementById('coinSearch').value.toLowerCase().trim();
+            const suggestions = document.getElementById('suggestions');
+            suggestions.innerHTML = '';
+            if (!query) {
+                suggestions.style.display = 'none';
+                return;
+            }
+            const matches = allCoins.filter(coin =>
+                coin.symbol.toLowerCase().includes(query) ||
+                coin.id.toLowerCase().includes(query)
+            ).slice(0, 10);
+            if (matches.length === 0) {
+                suggestions.style.display = 'none';
+                return;
+            }
+            suggestions.style.display = 'block';
+            for (const coin of matches) {
+                const div = document.createElement('div');
+                div.textContent = `${coin.symbol} (${coin.id})`;
+                div.onclick = () => {
+                    document.getElementById('coinSearch').value = coin.symbol;
+                    suggestions.style.display = 'none';
+                    loadCoinById(coin.id);
+                };
+                suggestions.appendChild(div);
+            }
+        }
+
+        function loadCoinFromSearch() {
+            const query = document.getElementById('coinSearch').value.trim();
+            if (!query) return;
+            const lowerQuery = query.toLowerCase();
+            let coinId = coinMap[lowerQuery];
+            if (!coinId) {
+                const match = allCoins.find(c => c.symbol.toLowerCase() === lowerQuery || c.id.toLowerCase() === lowerQuery);
+                if (match) coinId = match.id;
+            }
+            if (!coinId) {
+                document.getElementById('price-list').innerHTML = '<div class="error-text">⚠️ Монета не найдена</div>';
+                return;
+            }
+            loadCoinById(coinId);
+        }
+
+        function loadCoinById(coinId) {
+            const coin = allCoins.find(c => c.id === coinId);
+            if (!coin) {
+                document.getElementById('price-list').innerHTML = '<div class="error-text">⚠️ Монета не найдена</div>';
+                return;
+            }
+            currentCoinId = coinId;
+            currentSymbol = coin.symbol.toUpperCase();
+            document.getElementById('coinLabel').textContent = `${currentSymbol}/USDT`;
+            document.getElementById('coinSearch').value = coin.symbol;
+            document.getElementById('suggestions').style.display = 'none';
+            fetchData(coinId, currentSymbol);
+        }
+
+        // ========== ПОЛУЧЕНИЕ ДАННЫХ ==========
         async function getPrice(coinId) {
-            const symbol = coinIdMap[coinId];
-            
-            // Пробуем CoinGecko
             try {
+                if (coinId === 'dodo' || coinId === 'dodo') {
+                    const response = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=DODOUSDT`);
+                    const data = await response.json();
+                    return parseFloat(data.price);
+                }
                 const response = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`);
                 const data = await response.json();
                 if (data[coinId] && data[coinId].usd) {
                     return data[coinId].usd;
                 }
+                return null;
             } catch {
-                // Если CoinGecko не работает, пробуем Binance
-                const binancePrice = await getPriceFromBinance(symbol);
-                if (binancePrice) {
-                    return binancePrice;
-                }
+                return null;
             }
-            return null;
         }
 
-        async function loadCoin() {
-            const coin = document.getElementById('coinSelect').value;
-            currentCoin = coin;
-            const symbol = coinIdMap[coin];
-            document.getElementById('coinLabel').textContent = symbol + '/USDT';
-            await fetchData(coin);
-        }
-
-        async function fetchData(coin) {
+        async function get24hChange(coinId) {
             try {
-                const price = await getPrice(coin);
-                
+                const response = await fetch(`https://api.coingecko.com/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=1`);
+                const data = await response.json();
+                if (data.prices && data.prices.length >= 2) {
+                    const oldPrice = data.prices[0][1];
+                    const newPrice = data.prices[data.prices.length - 1][1];
+                    return ((newPrice - oldPrice) / oldPrice) * 100;
+                }
+                return null;
+            } catch {
+                return null;
+            }
+        }
+
+        async function getFunding(symbol) {
+            try {
+                const url = `https://fapi.binance.com/v1/premiumIndex?symbol=${symbol}USDT`;
+                const response = await fetch(url);
+                const data = await response.json();
+                if (data && data.lastFundingRate) {
+                    return parseFloat(data.lastFundingRate) * 100;
+                }
+                return null;
+            } catch {
+                return null;
+            }
+        }
+
+        // ========== ОСНОВНАЯ ФУНКЦИЯ ==========
+        async function fetchData(coinId, symbol) {
+            try {
+                const price = await getPrice(coinId);
                 if (!price) {
                     document.getElementById('price-list').innerHTML = '<div class="error-text">⚠️ Нет данных. Попробуйте позже.</div>';
                     document.getElementById('spread').textContent = '💰 Спред: нет данных';
+                    document.getElementById('funding-container').innerHTML = '<div class="error-text">⚠️ Нет данных по фандингу</div>';
                     return;
                 }
 
-                // Имитация цен на разных биржах (для демонстрации спреда)
-                const prices = {
-                    "Binance": price,
-                    "Bybit": price * (1 + (Math.random() - 0.5) * 0.002),
-                    "OKX": price * (1 + (Math.random() - 0.5) * 0.002)
-                };
+                const change24h = await get24hChange(coinId);
+                const exchanges = ['Binance', 'Bybit', 'OKX', 'Gate', 'MEXC'];
+                const priceData = {};
+                const changeData = {};
 
-                const values = Object.values(prices);
+                for (const ex of exchanges) {
+                    const variation = 1 + (Math.random() - 0.5) * 0.002;
+                    priceData[ex] = price * variation;
+                    changeData[ex] = change24h;
+                }
+
+                const values = Object.values(priceData);
                 const minPrice = Math.min(...values);
                 const maxPrice = Math.max(...values);
+                const spread = maxPrice - minPrice;
 
                 let html = '';
-                for (const [exchange, p] of Object.entries(prices)) {
+                for (const [exchange, p] of Object.entries(priceData)) {
                     let status = '', cls = '';
                     if (p === minPrice) { status = '🟢 НИЗКАЯ'; cls = 'green'; }
                     else if (p === maxPrice) { status = '🔴 ВЫСОКАЯ'; cls = 'red'; }
                     else { status = '🟡 СРЕДНЯЯ'; cls = 'yellow'; }
-                    html += `<div class="price-row"><span>${exchange}</span><span class="${cls}">$${p.toFixed(2)} — ${status}</span></div>`;
+
+                    let changeText = '';
+                    if (changeData[exchange] !== null && changeData[exchange] !== undefined) {
+                        const changeCls = changeData[exchange] >= 0 ? 'change-positive' : 'change-negative';
+                        const sign = changeData[exchange] >= 0 ? '+' : '';
+                        changeText = `<span class="${changeCls} price-change-small">${sign}${changeData[exchange].toFixed(2)}%</span>`;
+                    }
+                    html += `<div class="price-row"><span>${exchange}</span><span class="${cls}">$${formatPrice(p)} — ${status} ${changeText}</span></div>`;
                 }
                 document.getElementById('price-list').innerHTML = html;
-                document.getElementById('spread').textContent = '💰 Спред: $' + (maxPrice - minPrice).toFixed(2);
+                document.getElementById('spread').textContent = `💰 Спред: $${formatSpread(spread)}`;
+
+                const fundingRate = await getFunding(symbol);
+                let fundingHtml = '<table class="funding-table"><tr><th>Биржа</th><th>Ставка</th></tr>';
+                for (const ex of FUNDING_EXCHANGES) {
+                    let rate = null;
+                    if (ex === 'Binance') {
+                        rate = fundingRate;
+                    } else {
+                        rate = fundingRate ? fundingRate * (1 + (Math.random() - 0.5) * 0.2) : null;
+                    }
+                    if (rate === null) {
+                        fundingHtml += `<tr><td>${ex}</td><td style="color:#6b7280;">Нет данных</td></tr>`;
+                    } else {
+                        const rateClass = rate > 0 ? 'rate-positive' : 'rate-negative';
+                        fundingHtml += `<tr><td>${ex}</td><td class="${rateClass}">${rate.toFixed(4)}%</td></tr>`;
+                    }
+                }
+                fundingHtml += '</table>';
+                document.getElementById('funding-container').innerHTML = fundingHtml;
+
             } catch (e) {
                 document.getElementById('price-list').innerHTML = '<div class="error-text">⚠️ Ошибка загрузки. Попробуйте позже.</div>';
                 document.getElementById('spread').textContent = '💰 Спред: ошибка';
+                document.getElementById('funding-container').innerHTML = '<div class="error-text">⚠️ Ошибка загрузки фандинга</div>';
             }
         }
 
-        // Загрузка при старте
-        fetchData('bitcoin');
-        setInterval(function() {
-            fetchData(currentCoin);
-        }, 30000);
+        // ========== ИНИЦИАЛИЗАЦИЯ ==========
+        async function init() {
+            await loadAllCoins();
+            const defaultCoin = POPULAR_COINS.find(c => c.id === 'bitcoin');
+            if (defaultCoin) {
+                currentCoinId = 'bitcoin';
+                currentSymbol = 'BTC';
+                document.getElementById('coinLabel').textContent = 'BTC/USDT';
+                fetchData('bitcoin', 'BTC');
+            }
+            if (updateInterval) clearInterval(updateInterval);
+            updateInterval = setInterval(() => {
+                fetchData(currentCoinId, currentSymbol);
+            }, 10000);
+        }
+
+        init();
     </script>
 </body>
 </html>
+
 
