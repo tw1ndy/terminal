@@ -1,0 +1,18 @@
+name: Configure TON Telegram Webhook
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  set-webhook:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Register Telegram webhook
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          test -n "$TELEGRAM_BOT_TOKEN"
+          curl --fail-with-body --silent --show-error \
+            -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
+            -H "Content-Type: application/json" \
+            -d '{"url":"https://ton-price-webhook-tw1ndy228-3862.vercel.app/api/tg-hook-7f3c9a2e6d814b0fa51c2e87"}'
