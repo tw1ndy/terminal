@@ -12,8 +12,8 @@ API = "https://api.telegram.org/bot" + TOKEN + "/"
 GH = "https://api.github.com/repos/" + REPO + "/contents/" + STATE_PATH
 
 
-def request(url, data=None, headers=None):
-    req = urllib.request.Request(url, data=data, headers=headers or {})
+def request(url, data=None, headers=None, method=None):
+    req = urllib.request.Request(url, data=data, headers=headers or {}, method=method)
     with urllib.request.urlopen(req, timeout=25) as response:
         return json.loads(response.read())
 
@@ -64,6 +64,7 @@ def save_state(state, sha):
             "Content-Type": "application/json",
             "X-GitHub-Api-Version": "2022-11-28",
         },
+        method="PUT",
     )
 
 
