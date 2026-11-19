@@ -282,19 +282,42 @@ async function verifyTelegramWebApp(env: Env, initData: string): Promise<{ id: s
   }
 }
 
-async function authorizeWebAdmin(c: import("hono").Context<{ Bindings: Env }>): Promise<string | null> {
+async function authorizeWebAdmin(
+  c: import("hono").Context<{ Bindings: Env }>, permission = "panel.access"
+): Promise<string | null> {
   const authorization = c.req.header("Authorization") ?? "";
   if (!authorization.startsWith("tma ")) return null;
   const user = await verifyTelegramWebApp(c.env, authorization.slice(4));
-  if (!user || !(await isAdmin(c.env, user.id))) return null;
+  if (!user || !(await hasPermission(c.env, user.id, permission))) return null;
   return user.id;
 }
 
+async function getAdmin(env: Env, telegramId: string): Promise<{ role: string; permissions_json: string } | null> {
+  if (env.OWNER_TELEGRAM_ID && telegramId === env.OWNER_TELEGRAM_ID) {
+    return { role: "owner", permissions_json: '["*"]' };
+  }
+  return env.DB.prepare("SELECT role, permissions_json FROM admins WHERE telegram_id = ? AND is_active = 1")
+    .bind(telegramId).first<{ role: string; permissions_json: string }>();
+}
+
+async function hasPermission(env: Env, telegramId: string, permission: string): Promise<boolean> {
+  const admin = await getAdmin(env, telegramId);
+  if (!admin) return false;
+  let permissions: string[] = [];
+  try { permissions = JSON.parse(admin.permissions_json) as string[]; } catch { permissions = []; }
+  if (permissions.includes("*") || permissions.includes(permission)) return true;
+  const roleDefaults: Record<string, string[]> = {
+    owner: ["*"],
+    chief_admin: ["*"],
+    admin: ["panel.access", "stats.view", "shop.manage", "shop.review", "penalty.propose", "penalty.review", "antifraud.review"],
+    moderator: ["panel.access", "stats.view", "penalty.propose", "penalty.review", "antifraud.review"]
+  };
+  const defaults = roleDefaults[admin.role] ?? [];
+  return defaults.includes("*") || defaults.includes(permission);
+}
+
 async function isAdmin(env: Env, telegramId: string): Promise<boolean> {
-  if (env.OWNER_TELEGRAM_ID && telegramId === env.OWNER_TELEGRAM_ID) return true;
-  const row = await env.DB.prepare("SELECT 1 AS allowed FROM admins WHERE telegram_id = ? AND is_active = 1")
-    .bind(telegramId).first();
-  return Boolean(row);
+  return Boolean(await getAdmin(env, telegramId));
 }
 
 async function handleShopCommand(env: Env, update: TelegramUpdate, command: string, args: string): Promise<boolean> {
@@ -375,7 +398,7 @@ async function handleShopCommand(env: Env, update: TelegramUpdate, command: stri
   }
 
   if (command === "/penalty") {
-    if (!(await isAdmin(env, telegramId))) {
+    if (!(await hasPermission(env, telegramId, "penalty.propose"))) {
       await sendTelegramMessage(env, m.chat.id, "Недостаточно прав.");
       return true;
     }
@@ -410,7 +433,7 @@ async function handleShopCommand(env: Env, update: TelegramUpdate, command: stri
   }
 
   if (command === "/pendingpenalties") {
-    if (!(await isAdmin(env, telegramId))) {
+    if (!(await hasPermission(env, telegramId, "penalty.review"))) {
       await sendTelegramMessage(env, m.chat.id, "Недостаточно прав.");
       return true;
     }
@@ -426,7 +449,7 @@ async function handleShopCommand(env: Env, update: TelegramUpdate, command: stri
   }
 
   if (command === "/approvepenalty" || command === "/rejectpenalty") {
-    if (!(await isAdmin(env, telegramId))) {
+    if (!(await hasPermission(env, telegramId, "penalty.review"))) {
       await sendTelegramMessage(env, m.chat.id, "Недостаточно прав.");
       return true;
     }
@@ -474,7 +497,7 @@ async function handleShopCommand(env: Env, update: TelegramUpdate, command: stri
   }
 
   if (command === "/adminstats") {
-    if (!(await isAdmin(env, telegramId))) {
+    if (!(await hasPermission(env, telegramId, "stats.view"))) {
       await sendTelegramMessage(env, m.chat.id, "Недостаточно прав.");
       return true;
     }
@@ -494,7 +517,7 @@ async function handleShopCommand(env: Env, update: TelegramUpdate, command: stri
   }
 
   if (command === "/pending") {
-    if (!(await isAdmin(env, telegramId))) {
+    if (!(await hasPermission(env, telegramId, "shop.review"))) {
       await sendTelegramMessage(env, m.chat.id, "Недостаточно прав.");
       return true;
     }
@@ -512,7 +535,7 @@ async function handleShopCommand(env: Env, update: TelegramUpdate, command: stri
   }
 
   if (command === "/addreward") {
-    if (!(await isAdmin(env, telegramId))) {
+    if (!(await hasPermission(env, telegramId, "shop.manage"))) {
       await sendTelegramMessage(env, m.chat.id, "Недостаточно прав.");
       return true;
     }
@@ -540,7 +563,7 @@ async function handleShopCommand(env: Env, update: TelegramUpdate, command: stri
   }
 
   if (command === "/approve" || command === "/reject") {
-    if (!(await isAdmin(env, telegramId))) {
+    if (!(await hasPermission(env, telegramId, "shop.review"))) {
       await sendTelegramMessage(env, m.chat.id, "Недостаточно прав.");
       return true;
     }
@@ -890,7 +913,7 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
 }
 
 app.get("/api/admin/dashboard", async c => {
-  const actorId = await authorizeWebAdmin(c);
+  const actorId = await authorizeWebAdmin(c, "stats.view");
   if (!actorId) return c.json({ error: "unauthorized" }, 401);
   const now = Math.floor(Date.now() / 1000);
   const day = moscowDay(now);
@@ -952,7 +975,7 @@ app.get("/api/admin/dashboard", async c => {
 });
 
 app.post("/api/admin/settings", async c => {
-  const actorId = await authorizeWebAdmin(c);
+  const actorId = await authorizeWebAdmin(c, "settings.manage");
   if (!actorId) return c.json({ error: "unauthorized" }, 401);
   let body: { messageXp?: number; dailyXpCap?: number; seasonDays?: number };
   try { body = await c.req.json(); } catch { return c.json({ error: "invalid_json" }, 400); }
@@ -984,7 +1007,7 @@ app.post("/api/admin/settings", async c => {
 });
 
 app.post("/api/admin/purchases/:id/:action", async c => {
-  const actorId = await authorizeWebAdmin(c);
+  const actorId = await authorizeWebAdmin(c, "shop.review");
   if (!actorId) return c.json({ error: "unauthorized" }, 401);
   const id = Number(c.req.param("id"));
   const action = c.req.param("action");
@@ -1017,7 +1040,7 @@ app.post("/api/admin/purchases/:id/:action", async c => {
 });
 
 app.post("/api/admin/antifraud/:id/review", async c => {
-  const actorId = await authorizeWebAdmin(c);
+  const actorId = await authorizeWebAdmin(c, "antifraud.review");
   if (!actorId) return c.json({ error: "unauthorized" }, 401);
   const id = Number(c.req.param("id"));
   if (!Number.isSafeInteger(id) || id < 1) return c.json({ error: "invalid_request" }, 400);
@@ -1030,7 +1053,7 @@ app.post("/api/admin/antifraud/:id/review", async c => {
 });
 
 app.post("/api/admin/penalties/:id/:action", async c => {
-  const actorId = await authorizeWebAdmin(c);
+  const actorId = await authorizeWebAdmin(c, "penalty.review");
   if (!actorId) return c.json({ error: "unauthorized" }, 401);
   const id = Number(c.req.param("id"));
   const action = c.req.param("action");
