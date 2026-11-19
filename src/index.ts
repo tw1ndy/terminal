@@ -130,6 +130,15 @@ async function grantAchievement(env: Env, telegramId: string, achievementId: str
     .bind(telegramId, now, achievementId).run();
 }
 
+async function logAdminAction(
+  env: Env, actorId: string, action: string, targetId: string | null,
+  details: Record<string, unknown>, createdAt: number
+): Promise<void> {
+  await env.DB.prepare(`INSERT INTO admin_logs (actor_id, action, target_id, details_json, created_at)
+    VALUES (?, ?, ?, ?, ?)`)
+    .bind(actorId, action, targetId, JSON.stringify(details), createdAt).run();
+}
+
 async function isAdmin(env: Env, telegramId: string): Promise<boolean> {
   const row = await env.DB.prepare("SELECT 1 AS allowed FROM admins WHERE telegram_id = ? AND is_active = 1")
     .bind(telegramId).first();
@@ -262,6 +271,7 @@ async function handleShopCommand(env: Env, update: TelegramUpdate, command: stri
     const result = await env.DB.prepare(`INSERT INTO rewards
       (title, description, category, price_xp, quantity, is_active)
       VALUES (?, ?, ?, ?, NULL, 1)`).bind(title, description, category, price).run();
+    await logAdminAction(env, telegramId, "reward_created", String(result.meta.last_row_id ?? ""), { title, category, price }, now);
     await sendTelegramMessage(env, m.chat.id, `Товар добавлен. ID: ${result.meta.last_row_id}`);
     return true;
   }
@@ -279,6 +289,9 @@ async function handleShopCommand(env: Env, update: TelegramUpdate, command: stri
     if (command === "/approve") {
       const result = await env.DB.prepare(`UPDATE reward_purchases SET status = 'approved'
         WHERE id = ? AND status = 'pending'`).bind(purchaseId).run();
+      if ((result.meta.changes ?? 0) > 0) {
+        await logAdminAction(env, telegramId, "purchase_approved", String(purchaseId), {}, now);
+      }
       await sendTelegramMessage(env, m.chat.id, (result.meta.changes ?? 0) > 0
         ? `Заявка #${purchaseId} одобрена.` : "Заявка не найдена или уже обработана.");
       return true;
@@ -299,6 +312,9 @@ async function handleShopCommand(env: Env, update: TelegramUpdate, command: stri
         WHERE id = (SELECT reward_id FROM reward_purchases WHERE id = ?)
           AND changes() = 1`).bind(purchaseId)
     ]);
+    if ((results[0]?.meta.changes ?? 0) > 0) {
+      await logAdminAction(env, telegramId, "purchase_rejected", String(purchaseId), {}, now);
+    }
     await sendTelegramMessage(env, m.chat.id, (results[0]?.meta.changes ?? 0) > 0
       ? `Заявка #${purchaseId} отклонена, XP возвращены.`
       : "Заявка не найдена или уже обработана.");
