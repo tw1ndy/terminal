@@ -281,7 +281,7 @@ async function authorizeWebAdmin(
 ): Promise<string | null> {
   const authorization = c.req.header("Authorization") ?? "";
   if (!authorization.startsWith("tma ")) return null;
-  const user = await verifyTelegramWebApp(c.env, authorization.slice(4));
+  const user = await verifyTelegramWebApp(c.env.TELEGRAM_BOT_TOKEN, authorization.slice(4));
   if (!user || !(await hasPermission(c.env, user.id, permission))) return null;
   return user.id;
 }
