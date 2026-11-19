@@ -1,36 +1,11 @@
 import { Hono } from "hono";
 import type { Env, TelegramUpdate } from "./types";
 import { dailyMessageMilestones, dailyRewardAmount, nextDailyClaimStreak, previousDay } from "./rewards";
+import { getLevelProgress, validateLevelThresholds } from "./levels";
 
 const app = new Hono<{ Bindings: Env }>();
 const DEFAULT_MESSAGE_XP = 3;
 const DEFAULT_DAILY_CAP = 200;
-
-function levelTitle(level: number): string {
-  if (level <= 5) return "Новичок";
-  if (level <= 10) return "Активист";
-  if (level <= 20) return "Постоянный";
-  if (level <= 35) return "Ветеран";
-  if (level <= 50) return "Легенда НК";
-  return "Элитный участник";
-}
-
-function validateLevelThresholds(value: unknown): Record<string, number> | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const entries = Object.entries(value as Record<string, unknown>);
-  if (entries.length === 0) return {};
-  if (entries.length > 100) return null;
-  const parsed = entries.map(([key, xp]) => [Number(key), xp] as const)
-    .sort((a, b) => a[0] - b[0]);
-  if (parsed.some(([level, xp], index) =>
-    !Number.isSafeInteger(level) || level !== index + 1 ||
-    !Number.isSafeInteger(xp) || Number(xp) < 0 || Number(xp) > 1_000_000_000)) return null;
-  if (parsed[0][1] !== 0) return null;
-  for (let i = 1; i < parsed.length; i++) {
-    if (Number(parsed[i][1]) <= Number(parsed[i - 1][1])) return null;
-  }
-  return Object.fromEntries(parsed.map(([level, xp]) => [String(level), Number(xp)]));
-}
 
 function moscowDay(unixSeconds: number): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -919,14 +894,9 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
     }
     const displayName = row.first_name || (row.username ? `@${row.username}` : "Участник");
     const thresholds = validateLevelThresholds(await getSetting<unknown>(env, "level_thresholds", {})) ?? {};
-    const configuredLevels = Object.entries(thresholds).map(([level, xp]) => ({ level: Number(level), xp }))
-      .sort((a, b) => a.level - b.level);
-    const currentLevel = configuredLevels.filter(item => item.xp <= row.lifetime_xp).at(-1);
-    const nextLevel = currentLevel
-      ? configuredLevels.find(item => item.level === currentLevel.level + 1)
-      : configuredLevels[0];
-    const levelLine = currentLevel
-      ? `Уровень: ${currentLevel.level} · ${levelTitle(currentLevel.level)}${nextLevel ? `\nДо уровня ${nextLevel.level}: ${Math.max(0, nextLevel.xp - row.lifetime_xp)} XP` : "\nМаксимальный настроенный уровень"}`
+    const level = getLevelProgress(row.lifetime_xp, thresholds);
+    const levelLine = level
+      ? `Уровень: ${level.level} · ${level.title}${level.xpToNext === null ? "\nМаксимальный настроенный уровень" : `\nДо уровня ${level.nextLevel}: ${level.xpToNext} XP`}`
       : "Уровень: ещё не настроен администратором";
     await sendTelegramMessage(env, m.chat.id,
       `Профиль: ${displayName}\n${levelLine}\nПрефикс: ${row.prefix_title ?? "нет"}\nLifetime XP: ${row.lifetime_xp}\nДоступно: ${row.available_xp} XP\nСезон: ${row.season_xp} XP\nСообщений: ${row.message_count}\nСерия активности: ${row.current_streak} дн. (рекорд: ${row.longest_streak})\nДостижения: ${row.achievements}`);
