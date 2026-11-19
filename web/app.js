@@ -77,6 +77,9 @@
     $("penaltyCount").textContent = number(data.penalties.length);
     $("seasonTitle").textContent = data.season?.title || "Активный сезон не создан";
     $("seasonDates").textContent = data.season ? date(data.season.starts_at) + " — " + date(data.season.ends_at) : "—";
+    $("settingMessageXp").value = data.settings.messageXp;
+    $("settingDailyCap").value = data.settings.dailyXpCap;
+    $("settingSeasonDays").value = data.settings.seasonDays;
     renderQueue($("purchases"), data.purchases, "purchase");
     renderQueue($("penalties"), data.penalties, "penalty");
 
@@ -144,6 +147,25 @@
       $("refresh").disabled = false;
     }
   }
+  $("saveSettings").addEventListener("click", async () => {
+    const button = $("saveSettings");
+    button.disabled = true;
+    try {
+      await api("/api/admin/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messageXp: Number($("settingMessageXp").value),
+          dailyXpCap: Number($("settingDailyCap").value),
+          seasonDays: Number($("settingSeasonDays").value)
+        })
+      });
+      setNotice("Параметры экономики сохранены.", "success");
+      await load();
+    } catch (error) {
+      setNotice(error.message === "invalid_settings" ? "Проверь значения: XP за сообщение 1–20, лимит 50–5000, сезон 7–90 дней." : error.message, "error");
+    } finally { button.disabled = false; }
+  });
   $("refresh").addEventListener("click", load);
   load();
 })();
