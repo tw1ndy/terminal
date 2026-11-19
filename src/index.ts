@@ -795,6 +795,7 @@ async function awardSpecialXp(
   actorId: string,
   now: number
 ): Promise<boolean> {
+  await ensureActiveSeason(env, now);
   const results = await env.DB.batch([
     env.DB.prepare(`INSERT OR IGNORE INTO xp_transactions
       (telegram_id, amount, transaction_type, source_id, note, created_at, created_by)
