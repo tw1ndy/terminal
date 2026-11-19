@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { Env, TelegramUpdate } from "./types";
-import { dailyMessageMilestones, dailyRewardAmount, nextDailyClaimStreak, previousDay, validateSeasonRewardSchedule } from "./rewards";
+import { dailyMessageMilestones, dailyRewardAmount, monthlyRewardTypes, nextDailyClaimStreak, previousDay, validateSeasonRewardSchedule } from "./rewards";
 import { getLevelProgress, validateLevelThresholds } from "./levels";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -49,13 +49,14 @@ async function awardMonthlyRankingRewards(env: Env, now: number): Promise<void> 
         ? `Призёр месяца · ${periodKey}`
         : `Топ-3 месяца · ${periodKey}`;
 
-    if (index < 2) {
+    const rewardTypes = monthlyRewardTypes(index + 1);
+    if (rewardTypes.includes("prefix")) {
       await env.DB.prepare(`INSERT OR IGNORE INTO member_rewards
         (telegram_id, reward_type, title, period_key, created_at)
         VALUES (?, 'prefix', ?, ?, ?)`).bind(leader.telegram_id, title, periodKey, now).run();
     }
 
-    if (index === 0 || index === 2) {
+    if (rewardTypes.includes("achievement")) {
       const achievementId = index === 0
         ? `monthly_winner_${periodKey.replace("-", "_")}`
         : `monthly_top3_${periodKey.replace("-", "_")}`;
