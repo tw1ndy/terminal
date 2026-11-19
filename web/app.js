@@ -100,6 +100,33 @@
       line.append(node("span", "", "Администратор " + row.actor_id + " · объект " + (row.target_id || "—") + " · " + date(row.created_at)));
       logs.append(line);
     });
+
+    const fraud = $("fraud");
+    $("fraudCount").textContent = number(data.fraudEvents.length);
+    fraud.replaceChildren();
+    if (!data.fraudEvents.length) empty(fraud, "Новых сигналов нет.");
+    data.fraudEvents.forEach(row => {
+      const item = node("div", "item");
+      const main = node("div", "item-main");
+      main.append(node("div", "item-title", (row.event_type === "flood" ? "Возможный флуд" : "Повторяющийся текст") + " · ID " + row.telegram_id));
+      let detail = "";
+      try {
+        const parsed = JSON.parse(row.details_json);
+        detail = "Сообщений за 10 сек.: " + number(parsed.messages_in_10_seconds) + " · Повторов за 60 сек.: " + number(parsed.repeated_identical_messages_in_60_seconds);
+      } catch { detail = "Детали недоступны"; }
+      main.append(node("div", "item-meta", detail + " · " + date(row.created_at)));
+      const button = node("button", "", "Проверено");
+      button.type = "button";
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        try { await api("/api/admin/antifraud/" + row.id + "/review", { method: "POST" }); await load(); }
+        catch (error) { setNotice(error.message, "error"); button.disabled = false; }
+      });
+      const actions = node("div", "actions");
+      actions.append(button);
+      item.append(main, actions);
+      fraud.append(item);
+    });
   }
   async function load() {
     if (!initData) {
