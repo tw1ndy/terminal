@@ -185,6 +185,24 @@ async function handleShopCommand(env: Env, update: TelegramUpdate, command: stri
     return true;
   }
 
+  if (command === "/pending") {
+    if (!(await isAdmin(env, telegramId))) {
+      await sendTelegramMessage(env, m.chat.id, "Недостаточно прав.");
+      return true;
+    }
+    const result = await env.DB.prepare(`SELECT p.id, p.price_xp, r.title, u.first_name, u.username
+      FROM reward_purchases p JOIN rewards r ON r.id = p.reward_id
+      JOIN users u ON u.telegram_id = p.telegram_id
+      WHERE p.status = 'pending' ORDER BY p.created_at ASC LIMIT 20`).all<{
+        id: number; price_xp: number; title: string; first_name: string; username: string | null;
+      }>();
+    const lines = (result.results ?? []).map(p =>
+      `#${p.id} · ${p.title} · ${p.price_xp} XP · ${p.username ? `@${p.username}` : p.first_name}`);
+    await sendTelegramMessage(env, m.chat.id,
+      lines.length ? `Ожидают решения:\\n${lines.join("\\n")}\\n/approve ID или /reject ID` : "Нет ожидающих заявок.");
+    return true;
+  }
+
   if (command === "/addreward") {
     if (!(await isAdmin(env, telegramId))) {
       await sendTelegramMessage(env, m.chat.id, "Недостаточно прав.");
@@ -365,7 +383,7 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
 
   if (command === "/start" || command === "/help") {
     await sendTelegramMessage(env, m.chat.id,
-      "НК Activity — система активности сообщества.\n/profile — профиль и XP.\n/achievements — твои достижения.\n/daily — ежедневная награда.\n/shop — магазин.\n/buy ID — купить товар.\n/myorders — мои покупки.\n/top — общий топ-10.\n/topseason — рейтинг текущего сезона.");
+      "НК Activity — система активности сообщества.\n/profile — профиль и XP.\n/achievements — твои достижения.\n/daily — ежедневная награда.\n/shop — магазин.\n/buy ID — купить товар.\n/myorders — мои покупки.\n/pending — заявки на проверку (админ).\n/top — общий топ-10.\n/topseason — рейтинг текущего сезона.");
     return;
   }
   if (command === "/daily") {
