@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dailyMessageMilestone, dailyRewardAmount, nextDailyClaimStreak, previousDay } from "../src/rewards";
+import { dailyMessageMilestones, dailyRewardAmount, nextDailyClaimStreak, previousDay } from "../src/rewards";
 
 describe("daily reward calendar", () => {
   it("handles month and year boundaries", () => {
@@ -27,8 +27,12 @@ describe("daily reward calendar", () => {
   });
 
   it("grants message milestones only at daily thresholds", () => {
-    expect(dailyMessageMilestone(49)).toBeNull();
-    expect(dailyMessageMilestone(50)).toEqual({ sourceKey: "50", amount: 20, note: "50 сообщений за день" });
-    expect(dailyMessageMilestone(100)?.amount).toBe(35);
+    expect(dailyMessageMilestones(49)).toEqual([]);
+    expect(dailyMessageMilestones(50)).toEqual([{ sourceKey: "50", amount: 20, note: "50 сообщений за день" }]);
+    expect(dailyMessageMilestones(100)).toEqual([
+      { sourceKey: "50", amount: 20, note: "50 сообщений за день" },
+      { sourceKey: "100", amount: 35, note: "100 сообщений за день" }
+    ]);
+    expect(dailyMessageMilestones(101)).toHaveLength(2);
   });
 });
