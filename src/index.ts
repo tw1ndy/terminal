@@ -180,27 +180,50 @@ async function awardDailyXp(
   return row?.amount ?? 0;
 }
 
-async function detectFlood(env: Env, telegramId: string, chatId: number, now: number): Promise<void> {
+async function hashMessageText(text: string | undefined): Promise<string | null> {
+  const normalized = (text ?? "").toLocaleLowerCase("ru-RU").replace(/\\s+/g, " ").trim();
+  if (normalized.length < 12) return null;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(normalized));
+  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function detectFlood(
+  env: Env, telegramId: string, chatId: number, now: number, messageHash: string | null
+): Promise<void> {
   const recent = await env.DB.prepare(`SELECT COUNT(*) AS count FROM message_events
     WHERE telegram_id = ? AND created_at >= ?`).bind(telegramId, now - 10).first<{ count: number }>();
-  if ((recent?.count ?? 0) < 8) return;
+  let eventType: "flood" | "repeated_text" | null = (recent?.count ?? 0) >= 8 ? "flood" : null;
+  let repeatedCount = 0;
+  if (!eventType && messageHash) {
+    const repeated = await env.DB.prepare(`SELECT COUNT(*) AS count FROM message_events
+      WHERE telegram_id = ? AND message_hash = ? AND created_at >= ?`)
+      .bind(telegramId, messageHash, now - 60).first<{ count: number }>();
+    repeatedCount = repeated?.count ?? 0;
+    if (repeatedCount >= 5) eventType = "repeated_text";
+  }
+  if (!eventType) return;
 
   const cooldown = await env.DB.prepare(`SELECT 1 AS found FROM anti_fraud_events
-    WHERE telegram_id = ? AND event_type = 'flood' AND created_at >= ? LIMIT 1`)
-    .bind(telegramId, now - 600).first();
+    WHERE telegram_id = ? AND event_type = ? AND created_at >= ? LIMIT 1`)
+    .bind(telegramId, eventType, now - 600).first();
   if (cooldown) return;
 
   await env.DB.prepare(`INSERT INTO anti_fraud_events
     (telegram_id, event_type, details_json, created_at)
-    VALUES (?, 'flood', ?, ?)`)
-    .bind(telegramId, JSON.stringify({ messages_in_10_seconds: recent?.count ?? 0 }), now).run();
+    VALUES (?, ?, ?, ?)`)
+    .bind(telegramId, eventType, JSON.stringify({
+      messages_in_10_seconds: recent?.count ?? 0,
+      repeated_identical_messages_in_60_seconds: repeatedCount
+    }), now).run();
 
-  await sendTelegramMessage(env, chatId,
-    "Предупреждение: слишком частые сообщения. Сделай паузу, чтобы не засорять чат.");
+  const warning = eventType === "flood"
+    ? "Предупреждение: слишком частые сообщения. Сделай паузу, чтобы не засорять чат."
+    : "Предупреждение: обнаружены повторяющиеся сообщения. Не отправляй одинаковый текст многократно.";
+  await sendTelegramMessage(env, chatId, warning);
   const admins = await env.DB.prepare("SELECT telegram_id FROM admins WHERE is_active = 1").all<{ telegram_id: string }>();
   for (const admin of admins.results ?? []) {
     await sendTelegramMessage(env, Number(admin.telegram_id),
-      `Антифрод: возможный флуд. Telegram ID: ${telegramId}; сообщений за 10 секунд: ${recent?.count ?? 0}. XP автоматически не списывались.`);
+      `Антифрод: ${eventType === "flood" ? "возможный флуд" : "повторяющийся текст"}. Telegram ID: ${telegramId}. Сообщений за 10 секунд: ${recent?.count ?? 0}; повторов за 60 секунд: ${repeatedCount}. XP автоматически не списывались.`);
   }
 }
 
@@ -613,9 +636,10 @@ async function recordGroupMessage(env: Env, update: TelegramUpdate): Promise<voi
   ]);
 
   // Persist the Telegram event first. A retry can resume rewards without double-counting stats.
+  const messageHash = await hashMessageText(m.text);
   await env.DB.prepare(`INSERT OR IGNORE INTO message_events
-    (telegram_id, chat_id, message_id, event_day, created_at) VALUES (?, ?, ?, ?, ?)`)
-    .bind(telegramId, chatId, messageId, day, m.date).run();
+    (telegram_id, chat_id, message_id, event_day, created_at, message_hash) VALUES (?, ?, ?, ?, ?, ?)`)
+    .bind(telegramId, chatId, messageId, day, m.date, messageHash).run();
 
   await env.DB.batch([
     env.DB.prepare(`UPDATE user_stats SET
@@ -644,7 +668,7 @@ async function recordGroupMessage(env: Env, update: TelegramUpdate): Promise<voi
     .bind(chatId, messageId).first<{ message_count_snapshot: number | null; streak_snapshot: number | null }>();
   const count = eventStats?.message_count_snapshot ?? 0;
   const streak = eventStats?.streak_snapshot ?? 0;
-  await detectFlood(env, telegramId, m.chat.id, m.date);
+  await detectFlood(env, telegramId, m.chat.id, m.date, messageHash);
 
   await awardDailyXp(env, telegramId, day, "message", sourceKey,
     await getSetting(env, "message_xp", DEFAULT_MESSAGE_XP), "XP за сообщение", m.date);
