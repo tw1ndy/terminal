@@ -41,3 +41,10 @@ export function validateSeasonRewardSchedule(value: unknown): Record<string, num
   }
   return output;
 }
+
+export function monthlyRewardTypes(place: number): Array<"prefix" | "achievement"> {
+  if (place === 1) return ["prefix", "achievement"];
+  if (place === 2) return ["prefix"];
+  if (place === 3) return ["achievement"];
+  return [];
+}
