@@ -13,6 +13,10 @@ describe("daily reward calendar", () => {
     expect(nextDailyClaimStreak("2026-11-19", ["2026-11-18", "2026-11-16"])).toBe(2);
     expect(nextDailyClaimStreak("2026-11-19", ["2026-11-19", "2026-11-18"])).toBe(0);
     expect(nextDailyClaimStreak("2026-11-19", ["2026-11-11"])).toBe(1);
+    expect(nextDailyClaimStreak("2026-11-19", [
+      "2026-11-18", "2026-11-17", "2026-11-16", "2026-11-15",
+      "2026-11-14", "2026-11-13", "2026-11-12"
+    ])).toBe(8);
   });
 
   it("uses the configured seven-day reward cycle", () => {
