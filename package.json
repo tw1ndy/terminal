@@ -9,9 +9,12 @@
     "typecheck": "tsc --noEmit",
     "db:local": "wrangler d1 migrations apply nk-activity-db --local",
     "db:remote": "wrangler d1 migrations apply nk-activity-db --remote",
-    "test": "vitest run"
+    "test": "vitest run",
+    "webhook:set": "node scripts/set-webhook.mjs"
   },
-  "dependencies": { "hono": "^4.6.12" },
+  "dependencies": {
+    "hono": "^4.6.12"
+  },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241127.0",
     "typescript": "^5.7.2",
