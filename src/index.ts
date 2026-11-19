@@ -753,16 +753,28 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
       lines.length ? `Твои достижения:\n${lines.join("\n")}` : "Пока нет достижений. Продолжай общаться в группе.");
     return;
   }
+  if (command === "/myrewards") {
+    const result = await env.DB.prepare(`SELECT reward_type, title, period_key, created_at
+      FROM member_rewards WHERE telegram_id = ? ORDER BY created_at DESC LIMIT 20`)
+      .bind(telegramId).all<{ reward_type: string; title: string; period_key: string; created_at: number }>();
+    const lines = (result.results ?? []).map(item =>
+      `• ${item.title} · ${item.reward_type === "prefix" ? "префикс" : "достижение"}`);
+    await sendTelegramMessage(env, m.chat.id,
+      lines.length ? `Твои награды:\\n${lines.join("\\n")}` : "У тебя пока нет сезонных или месячных наград.");
+    return;
+  }
   if (command === "/profile" || command === "/me") {
     const row = await env.DB.prepare(`SELECT u.first_name, u.username, s.message_count,
       s.current_streak, s.longest_streak, w.lifetime_xp, w.available_xp, w.season_xp,
-      (SELECT COUNT(*) FROM user_achievements a WHERE a.telegram_id = u.telegram_id) AS achievements
+      (SELECT COUNT(*) FROM user_achievements a WHERE a.telegram_id = u.telegram_id) AS achievements,
+      (SELECT title FROM member_rewards mr WHERE mr.telegram_id = u.telegram_id AND mr.reward_type = 'prefix'
+        ORDER BY mr.created_at DESC LIMIT 1) AS prefix_title
       FROM users u JOIN user_stats s ON s.telegram_id = u.telegram_id
       JOIN xp_wallets w ON w.telegram_id = u.telegram_id WHERE u.telegram_id = ?`)
       .bind(telegramId).first<{
         first_name: string; username: string | null; message_count: number;
         current_streak: number; longest_streak: number; lifetime_xp: number;
-        available_xp: number; season_xp: number; achievements: number;
+        available_xp: number; season_xp: number; achievements: number; prefix_title: string | null;
       }>();
     if (!row) {
       await sendTelegramMessage(env, m.chat.id, "Профиль пока не создан. Напиши сообщение в основной группе и повтори команду.");
