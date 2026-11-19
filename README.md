@@ -14,6 +14,8 @@
 - `/profile`, `/me` — личная статистика
 - `/top`, `/rating` — публичный общий топ-10
 - `/topseason` — рейтинг текущего 30-дневного сезона
+- `/topday`, `/topweek`, `/topmonth` — рейтинги за день, неделю и месяц
+- `/topachievements`, `/topstreaks` — рейтинги по достижениям и рекорду серии
 - `/myrank` — личное место в общем и сезонном рейтингах
 - `/daily` — ежедневная награда с циклом 10/15/20/25/30/50/100 XP
 - `/achievements` — список полученных достижений
@@ -65,8 +67,7 @@
    - `TELEGRAM_BOT_TOKEN` — новый токен @AKTIVInkBot (не коммитить и не отправлять в чат).
    - `TELEGRAM_WEBHOOK_SECRET` — случайная длинная строка для проверки Telegram webhook.
    - `OWNER_TELEGRAM_ID` — `891419692`.
-   - `WEB_ADMIN_URL` — HTTPS-адрес Worker с путём `/admin` (после первого деплоя).
-6. Обычные переменные Worker: `TARGET_CHAT_ID=-1004353159956`, `APP_TIMEZONE=Europe/Moscow`, `APP_ENV=production`.
+6. Обычные переменные Worker: `TARGET_CHAT_ID=-1004353159956`, `APP_TIMEZONE=Europe/Moscow`, `APP_ENV=production`, `WEB_ADMIN_URL=https://<worker-domain>/admin`.
 7. Применить миграции к удалённой D1: `npx wrangler d1 migrations apply nk-activity-db --remote`.
 8. После успешного деплоя установить webhook Telegram на URL `https://nk-activity.<твой-subdomain>.workers.dev/webhook`, передав тот же `TELEGRAM_WEBHOOK_SECRET` как `secret_token`.
 9. Проверить `/health`, затем отправить `/start`, `/profile`, `/daily`, `/achievements`, `/shop`, `/top` и `/topseason` в тестовой группе.
