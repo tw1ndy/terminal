@@ -159,8 +159,18 @@ async function handleShopCommand(env: Env, update: TelegramUpdate, command: stri
       await sendTelegramMessage(env, m.chat.id, "Не удалось оформить покупку: проверь ID товара, наличие и баланс XP.");
       return true;
     }
+    const purchase = await env.DB.prepare(`SELECT p.price_xp, r.title, u.first_name, u.username
+      FROM reward_purchases p JOIN rewards r ON r.id = p.reward_id
+      JOIN users u ON u.telegram_id = p.telegram_id WHERE p.id = ?`)
+      .bind(purchaseId).first<{ price_xp: number; title: string; first_name: string; username: string | null }>();
     await sendTelegramMessage(env, m.chat.id,
-      `Заявка #${purchaseId} оформлена. Списано XP: сумма покупки. Ожидай подтверждения администрации.`);
+      `Заявка #${purchaseId} оформлена: ${purchase?.title ?? "товар"} · списано ${purchase?.price_xp ?? "—"} XP. Ожидай подтверждения администрации.`);
+    const admins = await env.DB.prepare("SELECT telegram_id FROM admins WHERE is_active = 1").all<{ telegram_id: string }>();
+    const buyer = purchase?.username ? `@${purchase.username}` : (purchase?.first_name ?? telegramId);
+    for (const admin of admins.results ?? []) {
+      await sendTelegramMessage(env, Number(admin.telegram_id),
+        `Новая покупка #${purchaseId}: ${purchase?.title ?? "товар"} за ${purchase?.price_xp ?? "—"} XP. Участник: ${buyer}.\\nОдобрить: /approve ${purchaseId}\\nОтклонить: /reject ${purchaseId}`);
+    }
     return true;
   }
 
@@ -355,7 +365,7 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
 
   if (command === "/start" || command === "/help") {
     await sendTelegramMessage(env, m.chat.id,
-      "НК Activity — система активности сообщества.\n/profile — профиль и XP.\n/achievements — твои достижения.\n/daily — ежедневная награда.\n/top — общий топ-10.\n/topseason — рейтинг текущего сезона.");
+      "НК Activity — система активности сообщества.\n/profile — профиль и XP.\n/achievements — твои достижения.\n/daily — ежедневная награда.\n/shop — магазин.\n/buy ID — купить товар.\n/myorders — мои покупки.\n/top — общий топ-10.\n/topseason — рейтинг текущего сезона.");
     return;
   }
   if (command === "/daily") {
