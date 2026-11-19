@@ -29,7 +29,7 @@
     return el;
   }
   function empty(target, text) { target.replaceChildren(node("p", "empty", text)); }
-  function renderQueue(target, rows, kind) {
+  function renderQueue(target, rows, kind, canAct = true) {
     target.replaceChildren();
     if (!rows.length) { empty(target, "Нет ожидающих заявок."); return; }
     for (const row of rows) {
@@ -42,14 +42,16 @@
         ? person + " · " + number(row.price_xp) + " XP · " + date(row.created_at)
         : person + " · ID " + row.telegram_id + " · " + row.reason + " · " + date(row.created_at);
       main.append(node("div", "item-meta", detail));
-      const actions = node("div", "actions");
-      for (const [action, label] of [["approve", "Подтвердить"], ["reject", "Отклонить"]]) {
-        const button = node("button", action === "reject" ? "reject" : "", label);
-        button.type = "button";
-        button.addEventListener("click", () => decide(kind, row.id, action, button));
-        actions.append(button);
-      }
-      item.append(main, actions);
+      if (canAct) {
+        const actions = node("div", "actions");
+        for (const [action, label] of [["approve", "Подтвердить"], ["reject", "Отклонить"]]) {
+          const button = node("button", action === "reject" ? "reject" : "", label);
+          button.type = "button";
+          button.addEventListener("click", () => decide(kind, row.id, action, button));
+          actions.append(button);
+        }
+        item.append(main, actions);
+      } else item.append(main);
       target.append(item);
     }
   }
@@ -75,13 +77,14 @@
     $("pendingPenalties").textContent = number(data.stats.pendingPenalties);
     $("purchaseCount").textContent = number(data.purchases.length);
     $("penaltyCount").textContent = number(data.penalties.length);
+    $("settingsPanel").hidden = !data.permissions.settingsManage;
     $("seasonTitle").textContent = data.season?.title || "Активный сезон не создан";
     $("seasonDates").textContent = data.season ? date(data.season.starts_at) + " — " + date(data.season.ends_at) : "—";
     $("settingMessageXp").value = data.settings.messageXp;
     $("settingDailyCap").value = data.settings.dailyXpCap;
     $("settingSeasonDays").value = data.settings.seasonDays;
-    renderQueue($("purchases"), data.purchases, "purchase");
-    renderQueue($("penalties"), data.penalties, "penalty");
+    renderQueue($("purchases"), data.purchases, "purchase", data.permissions.shopReview);
+    renderQueue($("penalties"), data.penalties, "penalty", data.permissions.penaltyReview);
 
     const top = $("top");
     top.replaceChildren();
@@ -118,16 +121,18 @@
         detail = "Сообщений за 10 сек.: " + number(parsed.messages_in_10_seconds) + " · Повторов за 60 сек.: " + number(parsed.repeated_identical_messages_in_60_seconds);
       } catch { detail = "Детали недоступны"; }
       main.append(node("div", "item-meta", detail + " · " + date(row.created_at)));
-      const button = node("button", "", "Проверено");
-      button.type = "button";
-      button.addEventListener("click", async () => {
-        button.disabled = true;
-        try { await api("/api/admin/antifraud/" + row.id + "/review", { method: "POST" }); await load(); }
-        catch (error) { setNotice(error.message, "error"); button.disabled = false; }
-      });
-      const actions = node("div", "actions");
-      actions.append(button);
-      item.append(main, actions);
+      if (data.permissions.antifraudReview) {
+        const button = node("button", "", "Проверено");
+        button.type = "button";
+        button.addEventListener("click", async () => {
+          button.disabled = true;
+          try { await api("/api/admin/antifraud/" + row.id + "/review", { method: "POST" }); await load(); }
+          catch (error) { setNotice(error.message, "error"); button.disabled = false; }
+        });
+        const actions = node("div", "actions");
+        actions.append(button);
+        item.append(main, actions);
+      } else item.append(main);
       fraud.append(item);
     });
   }
