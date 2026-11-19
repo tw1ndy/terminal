@@ -121,8 +121,12 @@ async function recordGroupMessage(env: Env, update: TelegramUpdate): Promise<voi
   // Daily activity and message-count milestones share the same 200 XP daily cap.
   await awardDailyXp(env, telegramId, day, "daily_activity", day, 15, "Ежедневная активность", m.date);
   const count = (stats?.message_count ?? 0) + 1;
-  if (count === 50) await awardDailyXp(env, telegramId, day, "message_milestone", "50", 20, "50 сообщений", m.date);
-  if (count === 100) await awardDailyXp(env, telegramId, day, "message_milestone", "100", 35, "100 сообщений", m.date);
+  const dailyCountRow = await env.DB.prepare(
+    "SELECT COUNT(*) AS count FROM message_events WHERE telegram_id = ? AND event_day = ?"
+  ).bind(telegramId, day).first<{ count: number }>();
+  const dailyCount = dailyCountRow?.count ?? 0;
+  if (dailyCount === 50) await awardDailyXp(env, telegramId, day, "message_milestone", "50", 20, "50 сообщений за день", m.date);
+  if (dailyCount === 100) await awardDailyXp(env, telegramId, day, "message_milestone", "100", 35, "100 сообщений за день", m.date);
   if (streak === 7) await awardDailyXp(env, telegramId, day, "streak_milestone", "7", 50, "Серия 7 дней", m.date);
   if (streak === 30) await awardDailyXp(env, telegramId, day, "streak_milestone", "30", 200, "Серия 30 дней", m.date);
 
