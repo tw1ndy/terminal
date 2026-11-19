@@ -14,12 +14,12 @@ export function nextDailyClaimStreak(today: string, recentClaimDays: string[]): 
     consecutive += 1;
     expected = previousDay(expected);
   }
-  return Math.min(consecutive + 1, 7);
+  return consecutive + 1;
 }
 
 export function dailyRewardAmount(streakDay: number): number {
   const cycle = [10, 15, 20, 25, 30, 50, 100];
-  return cycle[Math.max(0, Math.min(7, streakDay) - 1)] ?? 10;
+  return cycle[((Math.max(1, streakDay) - 1) % cycle.length)] ?? 10;
 }
 
 export function dailyMessageMilestone(count: number): { sourceKey: string; amount: number; note: string } | null {
