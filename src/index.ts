@@ -1239,7 +1239,17 @@ app.get("/", c => c.json({ service: "nk-activity", status: "ok", version: "0.4.0
 app.get("/health", async c => {
   try {
     await c.env.DB.prepare("SELECT 1").first();
-    return c.json({ ok: true, database: "connected" });
+    const schema = await c.env.DB.prepare(`SELECT COUNT(*) AS total FROM sqlite_master
+      WHERE type = 'table' AND name IN (
+        'users', 'user_stats', 'xp_wallets', 'xp_transactions', 'message_events',
+        'daily_xp_ledger', 'seasons', 'season_stats', 'season_results',
+        'season_reward_runs', 'rewards', 'reward_purchases', 'penalties',
+        'admins', 'settings', 'processed_updates', 'member_rewards'
+      )`).first<{ total: number }>();
+    if ((schema?.total ?? 0) !== 17) {
+      return c.json({ ok: false, database: "connected", schema: "incomplete" }, 503);
+    }
+    return c.json({ ok: true, database: "connected", schema: "ready" });
   } catch {
     return c.json({ ok: false, database: "unavailable" }, 503);
   }
