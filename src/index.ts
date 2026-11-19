@@ -483,6 +483,22 @@ async function handleShopCommand(env: Env, update: TelegramUpdate, command: stri
   return false;
 }
 
+async function sendAdminPanelButton(env: Env, chatId: number): Promise<void> {
+  if (!env.TELEGRAM_BOT_TOKEN || !env.WEB_ADMIN_URL || !env.WEB_ADMIN_URL.startsWith("https://")) return;
+  const response = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: "Панель администратора НК Activity. Доступ проверяется через Telegram.",
+      reply_markup: {
+        inline_keyboard: [[{ text: "Открыть админ-панель", web_app: { url: env.WEB_ADMIN_URL } }]]
+      }
+    })
+  });
+  if (!response.ok) console.error("Telegram admin panel button failed", response.status);
+}
+
 async function sendTelegramMessage(env: Env, chatId: number, text: string): Promise<void> {
   if (!env.TELEGRAM_BOT_TOKEN) return;
   const response = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
@@ -619,6 +635,23 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
 
   const handledShop = await handleShopCommand(env, update, command, text.slice(text.indexOf(" ") + 1));
   if (handledShop) return;
+
+  if (command === "/adminpanel") {
+    if (!(await isAdmin(env, telegramId))) {
+      await sendTelegramMessage(env, m.chat.id, "Недостаточно прав.");
+      return;
+    }
+    if (m.chat.type !== "private") {
+      await sendTelegramMessage(env, m.chat.id, "Открой личный диалог с ботом и отправь /adminpanel.");
+      return;
+    }
+    if (!env.WEB_ADMIN_URL || !env.WEB_ADMIN_URL.startsWith("https://")) {
+      await sendTelegramMessage(env, m.chat.id, "Ссылка на веб-панель ещё не настроена. Добавь WEB_ADMIN_URL в переменные Worker после деплоя.");
+      return;
+    }
+    await sendAdminPanelButton(env, m.chat.id);
+    return;
+  }
 
   if (command === "/start" || command === "/help") {
     await sendTelegramMessage(env, m.chat.id,
@@ -863,7 +896,7 @@ app.post("/webhook", async c => {
   }
 });
 
-app.get("/admin", async c => c.env.ASSETS.fetch(new Request(new URL("/index.html", c.req.url), c.req.raw)));
+app.get("/admin", async c => c.env.ASSETS.fetch(new Request(new URL("/index.html", c.req.url))));
 app.notFound(c => c.env.ASSETS.fetch(c.req.raw));
 export default {
   fetch: app.fetch,
