@@ -22,8 +22,10 @@ tables = {
         "SELECT name FROM sqlite_master WHERE type = 'table'"
     )
 }
-required = {"users", "xp_wallets", "xp_transactions", "seasons",
-            "season_results", "season_reward_runs", "daily_xp_ledger"}
+required = {"users", "user_stats", "xp_wallets", "xp_transactions", "message_events",
+            "daily_xp_ledger", "seasons", "season_stats", "season_results",
+            "season_reward_runs", "rewards", "reward_purchases", "penalties",
+            "admins", "settings", "processed_updates", "member_rewards"}
 missing = required - tables
 if missing:
     raise SystemExit("Missing expected tables: " + ", ".join(sorted(missing)))
