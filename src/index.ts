@@ -735,7 +735,7 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
 
   if (command === "/start" || command === "/help") {
     await sendTelegramMessage(env, m.chat.id,
-      "НК Activity — система активности сообщества.\n/profile — профиль и XP.\n/achievements — твои достижения.\n/daily — ежедневная награда.\n/shop — магазин.\n/buy ID — купить товар.\n/myorders — мои покупки.\n/pending — заявки на проверку (админ).\n/adminstats — статистика (админ).\n/penalty ID сумма | причина — предложить штраф (админ).\n/pendingpenalties — очередь штрафов (админ).\n/approvepenalty ID или /rejectpenalty ID (админ).\n/addreward категория | название | цена | описание | количество (админ).\n/approve ID или /reject ID (админ).\n/top — общий топ-10.\n/topseason — рейтинг сезона.\n/topday, /topweek, /topmonth — рейтинги за периоды.\n/topachievements, /topstreaks — рейтинги достижений и серий.\n/myrank — твоё место в рейтингах.\n/adminpanel — веб-панель (админ).");
+      "НК Activity — система активности сообщества.\n/profile — профиль и XP.\n/achievements — твои достижения.\n/daily — ежедневная награда.\n/shop — магазин.\n/buy ID — купить товар.\n/myorders — мои покупки.\n/pending — заявки на проверку (админ).\n/adminstats — статистика (админ).\n/penalty ID сумма | причина — предложить штраф (админ).\n/pendingpenalties — очередь штрафов (админ).\n/approvepenalty ID или /rejectpenalty ID (админ).\n/addreward категория | название | цена | описание | количество (админ).\n/approve ID или /reject ID (админ).\n/top — общий топ-10.\n/topseason — рейтинг сезона.\n/topday, /topweek, /topmonth — рейтинги за периоды.\n/topachievements, /topstreaks — рейтинги достижений и серий.\n/myrewards — история специальных наград.\n/myrank — твоё место в рейтингах.\n/adminpanel — веб-панель (админ).");
     return;
   }
   if (command === "/daily") {
@@ -760,7 +760,7 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
     const lines = (result.results ?? []).map(item =>
       `• ${item.title} · ${item.reward_type === "prefix" ? "префикс" : "достижение"}`);
     await sendTelegramMessage(env, m.chat.id,
-      lines.length ? `Твои награды:\\n${lines.join("\\n")}` : "У тебя пока нет сезонных или месячных наград.");
+      lines.length ? `Твои награды:\n${lines.join("\n")}` : "У тебя пока нет сезонных или месячных наград.");
     return;
   }
   if (command === "/profile" || command === "/me") {
@@ -782,7 +782,7 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
     }
     const displayName = row.first_name || (row.username ? `@${row.username}` : "Участник");
     await sendTelegramMessage(env, m.chat.id,
-      `Профиль: ${displayName}\nLifetime XP: ${row.lifetime_xp}\nДоступно: ${row.available_xp} XP\nСезон: ${row.season_xp} XP\nСообщений: ${row.message_count}\nСерия активности: ${row.current_streak} дн. (рекорд: ${row.longest_streak})\nДостижения: ${row.achievements}`);
+      `Профиль: ${displayName}\nПрефикс: ${row.prefix_title ?? "нет"}\nLifetime XP: ${row.lifetime_xp}\nДоступно: ${row.available_xp} XP\nСезон: ${row.season_xp} XP\nСообщений: ${row.message_count}\nСерия активности: ${row.current_streak} дн. (рекорд: ${row.longest_streak})\nДостижения: ${row.achievements}`);
     return;
   }
   if (command === "/myrank") {
