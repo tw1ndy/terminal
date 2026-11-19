@@ -4,7 +4,7 @@ export function previousDay(day: string): string {
   return value.toISOString().slice(0, 10);
 }
 
-/** Returns 0 when today's reward is already present; otherwise the next streak day (1–7). */
+/** Returns 0 when today's reward is already present; otherwise the next consecutive streak day. */
 export function nextDailyClaimStreak(today: string, recentClaimDays: string[]): number {
   if (recentClaimDays[0] === today) return 0;
   let expected = previousDay(today);
