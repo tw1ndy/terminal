@@ -69,6 +69,31 @@
       button.textContent = label;
     }
   }
+  function renderMembers(rows) {
+    const target = $("members");
+    target.replaceChildren();
+    $("memberCount").textContent = number(rows.length);
+    if (!rows.length) { empty(target, "Участники не найдены."); return; }
+    rows.forEach(row => {
+      const item = node("div", "item member-item");
+      const main = node("div", "item-main");
+      const name = row.first_name || row.last_name || (row.username ? "@" + row.username : "Участник");
+      main.append(node("div", "item-title", name + (row.username ? " · @" + row.username : "")));
+      main.append(node("div", "item-meta", "ID " + row.telegram_id + " · " + (row.is_active ? "Активен" : "Неактивен") + " · Регистрация: " + date(row.joined_at) + " · Последняя активность: " + date(row.last_seen_at)));
+      main.append(node("div", "item-meta", "Lifetime: " + number(row.lifetime_xp) + " XP · Доступно: " + number(row.available_xp) + " XP · Сезон: " + number(row.season_xp) + " XP"));
+      main.append(node("div", "item-meta", "Сообщений: " + number(row.message_count) + " · Серия: " + number(row.current_streak) + " дн. · Рекорд: " + number(row.longest_streak) + " дн."));
+      item.append(main);
+      target.append(item);
+    });
+  }
+  async function loadMembers(query = $("memberQuery").value.trim()) {
+    try {
+      const data = await api("/api/admin/members?q=" + encodeURIComponent(query));
+      renderMembers(data.members || []);
+    } catch (error) {
+      empty($("members"), error.message);
+    }
+  }
   function render(data) {
     $("users").textContent = number(data.stats.users);
     $("messages").textContent = number(data.stats.messagesToday);
@@ -78,6 +103,8 @@
     $("purchaseCount").textContent = number(data.purchases.length);
     $("penaltyCount").textContent = number(data.penalties.length);
     $("settingsPanel").hidden = !data.permissions.settingsManage;
+    $("membersPanel").hidden = !data.permissions.membersView;
+    if (data.permissions.membersView) loadMembers();
     $("seasonTitle").textContent = data.season?.title || "Активный сезон не создан";
     $("seasonDates").textContent = data.season ? date(data.season.starts_at) + " — " + date(data.season.ends_at) : "—";
     $("settingMessageXp").value = data.settings.messageXp;
@@ -173,6 +200,8 @@
       setNotice(error.message === "invalid_settings" ? "Проверь экономику и пороги уровней: уровень 1 = 0 XP, уровни подряд, каждый следующий порог выше предыдущего; максимум 100 уровней." : (error instanceof SyntaxError ? "Пороги уровней должны быть корректным JSON-объектом." : error.message), "error");
     } finally { button.disabled = false; }
   });
+  $("searchMembers").addEventListener("click", () => loadMembers());
+  $("memberQuery").addEventListener("keydown", event => { if (event.key === "Enter") loadMembers(); });
   $("refresh").addEventListener("click", load);
   load();
 })();
