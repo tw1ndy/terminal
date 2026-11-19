@@ -85,6 +85,75 @@ if monthly_count != 1:
 
 print("OK idempotent D1-style XP credit and monthly reward constraints")
 
+# Exercise the daily XP ledger, shared cap and wallet/season accounting.
+db.execute(
+    "INSERT INTO users (telegram_id, joined_at) VALUES ('daily-test', 1)"
+)
+db.execute("INSERT INTO xp_wallets (telegram_id) VALUES ('daily-test')")
+
+def award_daily(source_type: str, source_key: str, requested: int, cap: int, day: str) -> None:
+    db.execute(
+        """INSERT OR IGNORE INTO daily_xp_ledger
+           (telegram_id, reward_day, source_type, source_key, amount, created_at)
+           SELECT 'daily-test', ?, ?, ?, MIN(?, MAX(0, ? - COALESCE(
+             (SELECT SUM(amount) FROM daily_xp_ledger
+              WHERE telegram_id = 'daily-test' AND reward_day = ?), 0
+           ))), 2""",
+        (day, source_type, source_key, requested, cap, day),
+    )
+    db.execute(
+        """INSERT OR IGNORE INTO xp_transactions
+           (telegram_id, amount, transaction_type, source_id, note, created_at)
+           SELECT 'daily-test', amount, ?, ?, 'daily cap test', 2
+           FROM daily_xp_ledger
+           WHERE telegram_id = 'daily-test' AND reward_day = ?
+             AND source_type = ? AND source_key = ? AND amount > 0""",
+        (source_type, source_key, day, source_type, source_key),
+    )
+    db.execute(
+        """UPDATE xp_wallets SET
+           lifetime_xp = lifetime_xp + (SELECT amount FROM xp_transactions
+             WHERE telegram_id = 'daily-test' AND transaction_type = ? AND source_id = ?),
+           available_xp = available_xp + (SELECT amount FROM xp_transactions
+             WHERE telegram_id = 'daily-test' AND transaction_type = ? AND source_id = ?),
+           season_xp = season_xp + (SELECT amount FROM xp_transactions
+             WHERE telegram_id = 'daily-test' AND transaction_type = ? AND source_id = ?)
+           WHERE telegram_id = 'daily-test' AND changes() = 1""",
+        (source_type, source_key, source_type, source_key, source_type, source_key),
+    )
+    db.execute(
+        """INSERT INTO season_stats (season_id, telegram_id, season_xp)
+           SELECT id, 'daily-test', (SELECT amount FROM xp_transactions
+             WHERE telegram_id = 'daily-test' AND transaction_type = ? AND source_id = ?)
+           FROM seasons WHERE status = 'active' AND changes() = 1
+           ON CONFLICT(season_id, telegram_id) DO UPDATE
+             SET season_xp = season_xp + excluded.season_xp""",
+        (source_type, source_key),
+    )
+
+award_daily("message", "message:1", 3, 200, "2026-11-19")
+award_daily("message", "message:1", 3, 200, "2026-11-19")
+award_daily("daily_activity", "2026-11-19", 15, 200, "2026-11-19")
+award_daily("message_milestone", "50:2026-11-19", 20, 200, "2026-11-19")
+for message_number in range(2, 100):
+    award_daily("message", f"message:{message_number}", 3, 200, "2026-11-19")
+
+daily_total = db.execute(
+    "SELECT SUM(amount) FROM daily_xp_ledger WHERE telegram_id = 'daily-test' AND reward_day = '2026-11-19'"
+).fetchone()[0]
+daily_wallet = db.execute(
+    "SELECT lifetime_xp, available_xp, season_xp FROM xp_wallets WHERE telegram_id = 'daily-test'"
+).fetchone()
+daily_season = db.execute(
+    "SELECT season_xp FROM season_stats WHERE telegram_id = 'daily-test'"
+).fetchone()[0]
+if daily_total != 200 or daily_wallet != (200, 200, 200) or daily_season != 200:
+    raise SystemExit(
+        f"Daily XP cap/accounting failed: ledger={daily_total}, wallet={daily_wallet}, season={daily_season}"
+    )
+print("OK shared daily XP cap, duplicate prevention and wallet/season accounting")
+
+
 foreign_key_errors = db.execute("PRAGMA foreign_key_check").fetchall()
 if foreign_key_errors:
     raise SystemExit(f"Foreign key validation failed: {foreign_key_errors}")
