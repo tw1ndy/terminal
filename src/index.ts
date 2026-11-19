@@ -895,7 +895,7 @@ app.get("/api/admin/dashboard", async c => {
   const now = Math.floor(Date.now() / 1000);
   const day = moscowDay(now);
   await ensureActiveSeason(c.env, now);
-  const [users, messages, xp, pendingPurchases, pendingPenalties, season, top, purchases, penalties, logs] = await Promise.all([
+  const [users, messages, xp, pendingPurchases, pendingPenalties, season, top, purchases, penalties, logs, fraudEvents] = await Promise.all([
     c.env.DB.prepare("SELECT COUNT(*) AS total FROM users WHERE is_active = 1").first<{ total: number }>(),
     c.env.DB.prepare("SELECT COUNT(*) AS total FROM message_events WHERE event_day = ?").bind(day).first<{ total: number }>(),
     c.env.DB.prepare("SELECT COALESCE(SUM(lifetime_xp), 0) AS total FROM xp_wallets").first<{ total: number }>(),
@@ -924,6 +924,10 @@ app.get("/api/admin/dashboard", async c => {
     c.env.DB.prepare(`SELECT actor_id, action, target_id, details_json, created_at
       FROM admin_logs ORDER BY id DESC LIMIT 12`).all<{
         actor_id: string; action: string; target_id: string | null; details_json: string; created_at: number;
+      }>(),
+    c.env.DB.prepare(`SELECT id, telegram_id, event_type, details_json, created_at
+      FROM anti_fraud_events WHERE reviewed_at IS NULL ORDER BY id DESC LIMIT 15`).all<{
+        id: number; telegram_id: string; event_type: string; details_json: string; created_at: number;
       }>()
   ]);
   return c.json({
@@ -937,7 +941,8 @@ app.get("/api/admin/dashboard", async c => {
     top: top.results ?? [],
     purchases: purchases.results ?? [],
     penalties: penalties.results ?? [],
-    logs: logs.results ?? []
+    logs: logs.results ?? [],
+    fraudEvents: fraudEvents.results ?? []
   });
 });
 
@@ -971,6 +976,19 @@ app.post("/api/admin/purchases/:id/:action", async c => {
   ]);
   if ((results[0]?.meta.changes ?? 0) === 0) return c.json({ error: "not_pending" }, 409);
   await logAdminAction(c.env, actorId, "purchase_rejected", String(id), { source: "web_admin" }, now);
+  return c.json({ ok: true });
+});
+
+app.post("/api/admin/antifraud/:id/review", async c => {
+  const actorId = await authorizeWebAdmin(c);
+  if (!actorId) return c.json({ error: "unauthorized" }, 401);
+  const id = Number(c.req.param("id"));
+  if (!Number.isSafeInteger(id) || id < 1) return c.json({ error: "invalid_request" }, 400);
+  const now = Math.floor(Date.now() / 1000);
+  const result = await c.env.DB.prepare("UPDATE anti_fraud_events SET reviewed_at = ? WHERE id = ? AND reviewed_at IS NULL")
+    .bind(now, id).run();
+  if ((result.meta.changes ?? 0) === 0) return c.json({ error: "not_pending" }, 409);
+  await logAdminAction(c.env, actorId, "antifraud_reviewed", String(id), { source: "web_admin" }, now);
   return c.json({ ok: true });
 });
 
