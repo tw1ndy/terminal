@@ -224,7 +224,7 @@ async function handleShopCommand(env: Env, update: TelegramUpdate, command: stri
       await sendTelegramMessage(env, m.chat.id, "Недостаточно прав.");
       return true;
     }
-    const match = args.trim().match(/^(\\d+)\\s+(\\d+)\\s*\\|\\s*(.+)$/);
+    const match = args.trim().match(/^(\d+)\s+(\d+)\s*\|\s*(.+)$/);
     if (!match) {
       await sendTelegramMessage(env, m.chat.id, "Формат: /penalty TELEGRAM_ID сумма_XP | причина");
       return true;
