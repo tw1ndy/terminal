@@ -28,3 +28,16 @@ export function dailyMessageMilestones(count: number): Array<{ sourceKey: string
   if (count >= 100) milestones.push({ sourceKey: "100", amount: 35, note: "100 сообщений за день" });
   return milestones;
 }
+
+/** Validate the owner's optional season prize schedule. Zero or missing prizes are disabled. */
+export function validateSeasonRewardSchedule(value: unknown): Record<string, number> | null {
+  if (value === undefined || value === null) return {};
+  if (typeof value !== "object" || Array.isArray(value)) return null;
+  const output: Record<string, number> = {};
+  for (const [place, amount] of Object.entries(value as Record<string, unknown>)) {
+    if (!/^(?:[1-9]|10)$/.test(place)) return null;
+    if (typeof amount !== "number" || !Number.isSafeInteger(amount) || amount < 0 || amount > 1_000_000) return null;
+    if (amount > 0) output[place] = amount;
+  }
+  return output;
+}
