@@ -970,6 +970,12 @@ app.get("/api/admin/dashboard", async c => {
       messageXp: await getSetting(c.env, "message_xp", DEFAULT_MESSAGE_XP),
       dailyXpCap: await getSetting(c.env, "daily_xp_cap", DEFAULT_DAILY_CAP),
       seasonDays: await getSetting(c.env, "season_days", 30)
+    },
+    permissions: {
+      shopReview: await hasPermission(c.env, actorId, "shop.review"),
+      penaltyReview: await hasPermission(c.env, actorId, "penalty.review"),
+      antifraudReview: await hasPermission(c.env, actorId, "antifraud.review"),
+      settingsManage: await hasPermission(c.env, actorId, "settings.manage")
     }
   });
 });
