@@ -26,12 +26,43 @@ async function getSetting<T>(env: Env, key: string, fallback: T): Promise<T> {
   try { return JSON.parse(row.value_json) as T; } catch { return fallback; }
 }
 
+async function ensureActiveSeason(env: Env, now: number): Promise<void> {
+  const active = await env.DB.prepare("SELECT id, ends_at FROM seasons WHERE status = 'active' ORDER BY id DESC LIMIT 1")
+    .first<{ id: number; ends_at: number }>();
+  if (active && active.ends_at > now) return;
+
+  const seasonDays = await getSetting(env, "season_days", 30);
+  const duration = Math.max(1, Math.min(90, Number(seasonDays) || 30)) * 86400;
+  await env.DB.batch([
+    env.DB.prepare("UPDATE seasons SET status = 'closed' WHERE status = 'active' AND ends_at <= ?").bind(now),
+    env.DB.prepare(`
+      INSERT OR IGNORE INTO season_results (season_id, telegram_id, place, xp_awarded, archived_at)
+      SELECT season_id, telegram_id, place, season_xp, ?
+      FROM (
+        SELECT ss.season_id, ss.telegram_id, ss.season_xp,
+          ROW_NUMBER() OVER (PARTITION BY ss.season_id ORDER BY ss.season_xp DESC, ss.telegram_id ASC) AS place
+        FROM season_stats ss JOIN seasons s ON s.id = ss.season_id
+        WHERE s.status = 'closed' AND s.ends_at <= ?
+      )
+      WHERE place <= 10
+    `).bind(now, now),
+    env.DB.prepare(`
+      INSERT INTO seasons (title, starts_at, ends_at, status)
+      SELECT 'Сезон ' || (COALESCE(MAX(id), 0) + 1), ?, ?, 'active'
+      FROM seasons
+      WHERE NOT EXISTS (SELECT 1 FROM seasons WHERE status = 'active')
+    `).bind(now, now + duration),
+    env.DB.prepare("UPDATE xp_wallets SET season_xp = 0 WHERE changes() = 1")
+  ]);
+}
+
 /** Grants XP once per source and applies the shared daily cap atomically in SQL. */
 async function awardDailyXp(
   env: Env, telegramId: string, day: string, sourceType: string,
   sourceKey: string, requestedAmount: number, note: string, createdAt: number
 ): Promise<number> {
   if (requestedAmount <= 0) return 0;
+  await ensureActiveSeason(env, createdAt);
   const cap = await getSetting(env, "daily_xp_cap", DEFAULT_DAILY_CAP);
   // Keep ledger insertion, transaction creation and wallet credit in one D1 batch.
   // The unique transaction key makes retries safe; changes() gates the wallet increment.
@@ -57,7 +88,14 @@ async function awardDailyXp(
         season_xp = season_xp + (SELECT amount FROM xp_transactions WHERE telegram_id = ? AND transaction_type = ? AND source_id = ?)
       WHERE telegram_id = ? AND changes() = 1
     `).bind(telegramId, sourceType, sourceKey, telegramId, sourceType, sourceKey,
-      telegramId, sourceType, sourceKey, telegramId)
+      telegramId, sourceType, sourceKey, telegramId),
+    env.DB.prepare(`
+      INSERT INTO season_stats (season_id, telegram_id, season_xp)
+      SELECT id, ?, (SELECT amount FROM xp_transactions WHERE telegram_id = ? AND transaction_type = ? AND source_id = ?)
+      FROM seasons
+      WHERE status = 'active' AND changes() = 1
+      ON CONFLICT(season_id, telegram_id) DO UPDATE SET season_xp = season_xp + excluded.season_xp
+    `).bind(telegramId, telegramId, sourceType, sourceKey)
   ]);
   const transactionCreated = results[1]?.meta.changes ?? 0;
   if (transactionCreated === 0) return 0;
@@ -200,7 +238,7 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
 
   if (command === "/start" || command === "/help") {
     await sendTelegramMessage(env, m.chat.id,
-      "НК Activity — система активности сообщества.\n/profile — профиль и XP.\n/daily — ежедневная награда.\n/top — топ-10 участников.");
+      "НК Activity — система активности сообщества.\n/profile — профиль и XP.\n/daily — ежедневная награда.\n/top — общий топ-10.\n/topseason — рейтинг текущего сезона.");
     return;
   }
   if (command === "/daily") {
@@ -227,15 +265,26 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
       `Профиль: ${displayName}\nLifetime XP: ${row.lifetime_xp}\nДоступно: ${row.available_xp} XP\nСезон: ${row.season_xp} XP\nСообщений: ${row.message_count}\nСерия активности: ${row.current_streak} дн. (рекорд: ${row.longest_streak})\nДостижения: ${row.achievements}`);
     return;
   }
-  if (command === "/top" || command === "/rating") {
-    const result = await env.DB.prepare(`SELECT u.first_name, u.username, w.lifetime_xp
-      FROM xp_wallets w JOIN users u ON u.telegram_id = w.telegram_id
-      ORDER BY w.lifetime_xp DESC, u.joined_at ASC LIMIT 10`).all<{
-        first_name: string; username: string | null; lifetime_xp: number;
-      }>();
+  if (command === "/top" || command === "/rating" || command === "/topseason") {
+    const seasonOnly = command === "/topseason";
+    if (seasonOnly) await ensureActiveSeason(env, m.date);
+    const result = seasonOnly
+      ? await env.DB.prepare(`SELECT u.first_name, u.username, ss.season_xp AS xp
+          FROM season_stats ss JOIN users u ON u.telegram_id = ss.telegram_id
+          JOIN seasons s ON s.id = ss.season_id
+          WHERE s.status = 'active'
+          ORDER BY ss.season_xp DESC, u.joined_at ASC LIMIT 10`).all<{
+            first_name: string; username: string | null; xp: number;
+          }>()
+      : await env.DB.prepare(`SELECT u.first_name, u.username, w.lifetime_xp AS xp
+          FROM xp_wallets w JOIN users u ON u.telegram_id = w.telegram_id
+          ORDER BY w.lifetime_xp DESC, u.joined_at ASC LIMIT 10`).all<{
+            first_name: string; username: string | null; xp: number;
+          }>();
     const lines = (result.results ?? []).map((row, i) =>
-      `${i + 1}. ${row.first_name || (row.username ? `@${row.username}` : "Участник")} — ${row.lifetime_xp} XP`);
-    await sendTelegramMessage(env, m.chat.id, lines.length ? `Топ-10 НК\n${lines.join("\n")}` : "Рейтинг пока пуст.");
+      `${i + 1}. ${row.first_name || (row.username ? `@${row.username}` : "Участник")} — ${row.xp} XP`);
+    const title = seasonOnly ? "Топ сезона НК" : "Топ-10 НК";
+    await sendTelegramMessage(env, m.chat.id, lines.length ? `${title}\n${lines.join("\n")}` : "Рейтинг пока пуст.");
   }
 }
 
