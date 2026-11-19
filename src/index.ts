@@ -219,6 +219,100 @@ async function handleShopCommand(env: Env, update: TelegramUpdate, command: stri
     return true;
   }
 
+  if (command === "/penalty") {
+    if (!(await isAdmin(env, telegramId))) {
+      await sendTelegramMessage(env, m.chat.id, "Недостаточно прав.");
+      return true;
+    }
+    const match = args.trim().match(/^(\\d+)\\s+(\\d+)\\s*\\|\\s*(.+)$/);
+    if (!match) {
+      await sendTelegramMessage(env, m.chat.id, "Формат: /penalty TELEGRAM_ID сумма_XP | причина");
+      return true;
+    }
+    const targetId = match[1];
+    const amount = Number(match[2]);
+    const reason = match[3].trim();
+    if (!Number.isSafeInteger(amount) || amount < 1 || amount > 10000 || reason.length < 3) {
+      await sendTelegramMessage(env, m.chat.id, "Проверь сумму (1–10000 XP) и причину.");
+      return true;
+    }
+    const result = await env.DB.prepare(`INSERT INTO penalties
+      (telegram_id, suggested_amount, reason, status, proposed_by, created_at)
+      SELECT ?, ?, ?, 'pending', ?, ? FROM users WHERE telegram_id = ?`)
+      .bind(targetId, amount, reason, telegramId, now, targetId).run();
+    if ((result.meta.changes ?? 0) === 0) {
+      await sendTelegramMessage(env, m.chat.id, "Участник с таким Telegram ID не найден.");
+      return true;
+    }
+    await logAdminAction(env, telegramId, "penalty_proposed", String(result.meta.last_row_id ?? ""), { targetId, amount, reason }, now);
+    await sendTelegramMessage(env, m.chat.id, `Штраф #${result.meta.last_row_id} создан и ожидает подтверждения. XP пока не списаны.`);
+    return true;
+  }
+
+  if (command === "/pendingpenalties") {
+    if (!(await isAdmin(env, telegramId))) {
+      await sendTelegramMessage(env, m.chat.id, "Недостаточно прав.");
+      return true;
+    }
+    const result = await env.DB.prepare(`SELECT p.id, p.telegram_id, p.suggested_amount, p.reason
+      FROM penalties p WHERE p.status = 'pending' ORDER BY p.created_at ASC LIMIT 20`).all<{
+        id: number; telegram_id: string; suggested_amount: number; reason: string;
+      }>();
+    const lines = (result.results ?? []).map(p =>
+      `#${p.id} · ID ${p.telegram_id} · ${p.suggested_amount} XP · ${p.reason}`);
+    await sendTelegramMessage(env, m.chat.id,
+      lines.length ? `Штрафы на подтверждение:\\n${lines.join("\\n")}\\n/approvepenalty ID или /rejectpenalty ID` : "Нет штрафов на подтверждение.");
+    return true;
+  }
+
+  if (command === "/approvepenalty" || command === "/rejectpenalty") {
+    if (!(await isAdmin(env, telegramId))) {
+      await sendTelegramMessage(env, m.chat.id, "Недостаточно прав.");
+      return true;
+    }
+    const penaltyId = Number(args.trim());
+    if (!Number.isSafeInteger(penaltyId) || penaltyId < 1) {
+      await sendTelegramMessage(env, m.chat.id, `Формат: ${command} ID`);
+      return true;
+    }
+    if (command === "/rejectpenalty") {
+      const result = await env.DB.prepare(`UPDATE penalties SET status = 'rejected', reviewed_by = ?, reviewed_at = ?
+        WHERE id = ? AND status = 'pending'`).bind(telegramId, now, penaltyId).run();
+      if ((result.meta.changes ?? 0) > 0) {
+        await logAdminAction(env, telegramId, "penalty_rejected", String(penaltyId), {}, now);
+      }
+      await sendTelegramMessage(env, m.chat.id, (result.meta.changes ?? 0) > 0
+        ? `Штраф #${penaltyId} отклонён. XP не списывались.` : "Штраф не найден или уже обработан.");
+      return true;
+    }
+    const results = await env.DB.batch([
+      env.DB.prepare(`UPDATE penalties SET status = 'approved', approved_amount = suggested_amount,
+        reviewed_by = ?, reviewed_at = ?
+        WHERE id = ? AND status = 'pending'
+          AND EXISTS (SELECT 1 FROM xp_wallets w WHERE w.telegram_id = penalties.telegram_id
+            AND w.available_xp >= penalties.suggested_amount)`).bind(telegramId, now, penaltyId),
+      env.DB.prepare(`INSERT INTO xp_transactions
+        (telegram_id, amount, transaction_type, source_id, note, created_at)
+        SELECT telegram_id, -approved_amount, 'penalty', CAST(id AS TEXT), reason, ?
+        FROM penalties WHERE id = ? AND status = 'approved' AND changes() = 1`).bind(now, penaltyId),
+      env.DB.prepare(`UPDATE xp_wallets SET available_xp = available_xp +
+        (SELECT amount FROM xp_transactions WHERE transaction_type = 'penalty' AND source_id = ?)
+        WHERE telegram_id = (SELECT telegram_id FROM penalties WHERE id = ?)
+          AND changes() = 1`).bind(String(penaltyId), penaltyId)
+    ]);
+    if ((results[0]?.meta.changes ?? 0) > 0) {
+      await logAdminAction(env, telegramId, "penalty_approved", String(penaltyId), {}, now);
+      await sendTelegramMessage(env, m.chat.id, `Штраф #${penaltyId} подтверждён. XP списаны.`);
+    } else {
+      const pending = await env.DB.prepare("SELECT status FROM penalties WHERE id = ?").bind(penaltyId)
+        .first<{ status: string }>();
+      await sendTelegramMessage(env, m.chat.id, pending?.status === "pending"
+        ? "Недостаточно доступных XP у участника — штраф оставлен на рассмотрении."
+        : "Штраф не найден или уже обработан.");
+    }
+    return true;
+  }
+
   if (command === "/adminstats") {
     if (!(await isAdmin(env, telegramId))) {
       await sendTelegramMessage(env, m.chat.id, "Недостаточно прав.");
@@ -445,7 +539,7 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
 
   if (command === "/start" || command === "/help") {
     await sendTelegramMessage(env, m.chat.id,
-      "НК Activity — система активности сообщества.\n/profile — профиль и XP.\n/achievements — твои достижения.\n/daily — ежедневная награда.\n/shop — магазин.\n/buy ID — купить товар.\n/myorders — мои покупки.\n/pending — заявки на проверку (админ).\n/adminstats — статистика (админ).\n/addreward категория | название | цена | описание (админ).\n/approve ID или /reject ID (админ).\n/top — общий топ-10.\n/topseason — рейтинг текущего сезона.");
+      "НК Activity — система активности сообщества.\n/profile — профиль и XP.\n/achievements — твои достижения.\n/daily — ежедневная награда.\n/shop — магазин.\n/buy ID — купить товар.\n/myorders — мои покупки.\n/pending — заявки на проверку (админ).\n/adminstats — статистика (админ).\n/penalty ID сумма | причина — предложить штраф (админ).\n/pendingpenalties — очередь штрафов (админ).\n/approvepenalty ID или /rejectpenalty ID (админ).\n/addreward категория | название | цена | описание (админ).\n/approve ID или /reject ID (админ).\n/top — общий топ-10.\n/topseason — рейтинг текущего сезона.");
     return;
   }
   if (command === "/daily") {
