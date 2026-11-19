@@ -72,6 +72,61 @@ async function recordGroupMessage(env: Env, update: TelegramUpdate): Promise<voi
   ]);
 }
 
+async function sendTelegramMessage(env: Env, chatId: number, text: string): Promise<void> {
+  if (!env.TELEGRAM_BOT_TOKEN) return;
+  const response = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, text })
+  });
+  if (!response.ok) console.error("Telegram sendMessage failed", response.status);
+}
+
+async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
+  const m = update.message;
+  const text = m?.text?.trim();
+  if (!m || !text || !m.from || !["group", "supergroup", "private"].includes(m.chat.type)) return;
+  const command = text.split(/\\s+/, 1)[0].split("@", 1)[0].toLowerCase();
+  const userId = String(m.from.id);
+
+  if (command === "/start" || command === "/help") {
+    await sendTelegramMessage(env, m.chat.id,
+      "НК Activity — система активности сообщества.\\n/profile — твой профиль и XP.\\n/top — топ-10 участников.");
+    return;
+  }
+
+  if (command === "/profile" || command === "/me") {
+    const row = await env.DB.prepare(`SELECT u.first_name, u.username, s.message_count,
+      s.current_streak, s.longest_streak, w.lifetime_xp, w.available_xp, w.season_xp
+      FROM users u JOIN user_stats s ON s.telegram_id = u.telegram_id
+      JOIN xp_wallets w ON w.telegram_id = u.telegram_id WHERE u.telegram_id = ?`)
+      .bind(userId).first<{
+        first_name: string; username: string | null; message_count: number;
+        current_streak: number; longest_streak: number; lifetime_xp: number;
+        available_xp: number; season_xp: number;
+      }>();
+    if (!row) {
+      await sendTelegramMessage(env, m.chat.id, "Профиль пока не создан. Напиши сообщение в группе и повтори команду.");
+      return;
+    }
+    const displayName = row.first_name || (row.username ? `@${row.username}` : "Участник");
+    await sendTelegramMessage(env, m.chat.id,
+      `Профиль: ${displayName}\\nУровень XP: ${row.lifetime_xp} Lifetime XP\\nДоступно: ${row.available_xp} XP\\nСезон: ${row.season_xp} XP\\nСообщений: ${row.message_count}\\nСерия: ${row.current_streak} дн. (рекорд: ${row.longest_streak})`);
+    return;
+  }
+
+  if (command === "/top" || command === "/rating") {
+    const result = await env.DB.prepare(`SELECT u.first_name, u.username, w.lifetime_xp
+      FROM xp_wallets w JOIN users u ON u.telegram_id = w.telegram_id
+      ORDER BY w.lifetime_xp DESC, u.joined_at ASC LIMIT 10`).all<{
+        first_name: string; username: string | null; lifetime_xp: number;
+      }>();
+    const lines = (result.results ?? []).map((row, i) =>
+      `${i + 1}. ${row.first_name || (row.username ? `@${row.username}` : "Участник")} — ${row.lifetime_xp} XP`);
+    await sendTelegramMessage(env, m.chat.id, lines.length ? `Топ-10 НК\\n${lines.join("\\n")}` : "Рейтинг пока пуст.");
+  }
+}
+
 app.get("/", c => c.json({ service: "nk-activity", status: "ok", version: "0.2.0" }));
 app.get("/health", async c => {
   try {
