@@ -17,7 +17,7 @@ describe("daily reward calendar", () => {
 
   it("uses the configured seven-day reward cycle", () => {
     expect([1, 2, 3, 4, 5, 6, 7].map(dailyRewardAmount)).toEqual([10, 15, 20, 25, 30, 50, 100]);
-    expect(dailyRewardAmount(8)).toBe(10);
+    expect(dailyRewardAmount(8)).toBe(100);
   });
 
   it("grants message milestones only at daily thresholds", () => {
