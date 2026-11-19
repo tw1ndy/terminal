@@ -4,7 +4,8 @@ compatibility_date = "2026-11-19"
 
 [vars]
 APP_TIMEZONE = "Europe/Moscow"
-APP_ENV = "development"
+APP_ENV = "production"
+TARGET_CHAT_ID = "-1004353159956"
 
 [[d1_databases]]
 binding = "DB"
