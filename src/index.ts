@@ -797,7 +797,7 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
       await sendTelegramMessage(env, m.chat.id, "Недостаточно прав.");
       return;
     }
-    const match = text.match(/^\\/((?:eventxp)|(?:contestxp))\\s+(\\d+)(?:\\s*\\|\\s*(.{3,120}))?$/i);
+    const match = text.match(/^\/((?:eventxp)|(?:contestxp))\s+(\d+)(?:\s*\|\s*(.{3,120}))?$/i);
     if (!match) {
       await sendTelegramMessage(env, m.chat.id,
         "Формат: /eventxp TELEGRAM_ID | причина ( +30 XP ) или /contestxp TELEGRAM_ID | причина ( +100 XP ).");
