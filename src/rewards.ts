@@ -22,8 +22,9 @@ export function dailyRewardAmount(streakDay: number): number {
   return cycle[((Math.max(1, streakDay) - 1) % cycle.length)] ?? 10;
 }
 
-export function dailyMessageMilestone(count: number): { sourceKey: string; amount: number; note: string } | null {
-  if (count === 50) return { sourceKey: "50", amount: 20, note: "50 сообщений за день" };
-  if (count === 100) return { sourceKey: "100", amount: 35, note: "100 сообщений за день" };
-  return null;
+export function dailyMessageMilestones(count: number): Array<{ sourceKey: string; amount: number; note: string }> {
+  const milestones: Array<{ sourceKey: string; amount: number; note: string }> = [];
+  if (count >= 50) milestones.push({ sourceKey: "50", amount: 20, note: "50 сообщений за день" });
+  if (count >= 100) milestones.push({ sourceKey: "100", amount: 35, note: "100 сообщений за день" });
+  return milestones;
 }
