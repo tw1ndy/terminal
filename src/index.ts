@@ -664,7 +664,9 @@ app.notFound(c => c.json({ error: "not_found" }, 404));
 export default {
   fetch: app.fetch,
   async scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext) {
+    const now = Math.floor(Date.now() / 1000);
+    await ensureActiveSeason(env, now);
     await env.DB.prepare("DELETE FROM processed_updates WHERE processed_at < ?")
-      .bind(Math.floor(Date.now() / 1000) - 14 * 24 * 60 * 60).run();
+      .bind(now - 14 * 24 * 60 * 60).run();
   }
 };
