@@ -335,8 +335,8 @@ async function hasPermission(env: Env, telegramId: string, permission: string): 
   const roleDefaults: Record<string, string[]> = {
     owner: ["*"],
     chief_admin: ["*"],
-    admin: ["panel.access", "stats.view", "shop.manage", "shop.review", "penalty.propose", "penalty.review", "antifraud.review", "rewards.award"],
-    moderator: ["panel.access", "stats.view", "penalty.propose", "penalty.review", "antifraud.review"]
+    admin: ["panel.access", "stats.view", "members.view", "shop.manage", "shop.review", "penalty.propose", "penalty.review", "antifraud.review", "rewards.award"],
+    moderator: ["panel.access", "stats.view", "members.view", "penalty.propose", "penalty.review", "antifraud.review"]
   };
   const defaults = roleDefaults[admin.role] ?? [];
   return defaults.includes("*") || defaults.includes(permission);
@@ -1076,9 +1076,34 @@ app.get("/api/admin/dashboard", async c => {
       shopReview: await hasPermission(c.env, actorId, "shop.review"),
       penaltyReview: await hasPermission(c.env, actorId, "penalty.review"),
       antifraudReview: await hasPermission(c.env, actorId, "antifraud.review"),
-      settingsManage: await hasPermission(c.env, actorId, "settings.manage")
+      settingsManage: await hasPermission(c.env, actorId, "settings.manage"),
+      membersView: await hasPermission(c.env, actorId, "members.view")
     }
   });
+});
+
+app.get("/api/admin/members", async c => {
+  const actorId = await authorizeWebAdmin(c, "members.view");
+  if (!actorId) return c.json({ error: "unauthorized" }, 401);
+  const query = (c.req.query("q") ?? "").trim().slice(0, 64);
+  const result = await c.env.DB.prepare(`SELECT u.telegram_id, u.username, u.first_name, u.last_name,
+      u.joined_at, u.last_seen_at, u.is_active, s.message_count, s.current_streak, s.longest_streak,
+      w.lifetime_xp, w.available_xp, w.season_xp
+    FROM users u
+    LEFT JOIN user_stats s ON s.telegram_id = u.telegram_id
+    LEFT JOIN xp_wallets w ON w.telegram_id = u.telegram_id
+    WHERE (? = '' OR instr(lower(u.telegram_id), lower(?)) > 0
+      OR instr(lower(COALESCE(u.username, '')), lower(?)) > 0
+      OR instr(lower(COALESCE(u.first_name, '')), lower(?)) > 0
+      OR instr(lower(COALESCE(u.last_name, '')), lower(?)) > 0)
+    ORDER BY u.last_seen_at DESC, u.joined_at DESC LIMIT 30`)
+    .bind(query, query, query, query, query).all<{
+      telegram_id: string; username: string | null; first_name: string | null; last_name: string | null;
+      joined_at: number; last_seen_at: number | null; is_active: number; message_count: number | null;
+      current_streak: number | null; longest_streak: number | null; lifetime_xp: number | null;
+      available_xp: number | null; season_xp: number | null;
+    }>();
+  return c.json({ ok: true, members: result.results ?? [], query });
 });
 
 app.post("/api/admin/settings", async c => {
