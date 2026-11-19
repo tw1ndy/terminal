@@ -753,9 +753,9 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
     } else if (command === "/topstreaks") {
       title = "Топ по сериям активности";
       suffix = "дн.";
-      const query = await env.DB.prepare(`SELECT u.first_name, u.username, s.current_streak AS value, u.joined_at
+      const query = await env.DB.prepare(`SELECT u.first_name, u.username, s.longest_streak AS value, u.joined_at
         FROM user_stats s JOIN users u ON u.telegram_id = s.telegram_id
-        ORDER BY s.current_streak DESC, s.longest_streak DESC, u.joined_at ASC LIMIT 10`).all<{
+        ORDER BY s.longest_streak DESC, s.current_streak DESC, u.joined_at ASC LIMIT 10`).all<{
           first_name: string; username: string | null; value: number; joined_at: number;
         }>();
       result = query;
