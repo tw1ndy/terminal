@@ -106,6 +106,135 @@ async function grantAchievement(env: Env, telegramId: string, achievementId: str
     .bind(telegramId, now, achievementId).run();
 }
 
+async function isAdmin(env: Env, telegramId: string): Promise<boolean> {
+  const row = await env.DB.prepare("SELECT 1 AS allowed FROM admins WHERE telegram_id = ? AND is_active = 1")
+    .bind(telegramId).first();
+  return Boolean(row);
+}
+
+async function handleShopCommand(env: Env, update: TelegramUpdate, command: string, args: string): Promise<boolean> {
+  const m = update.message;
+  if (!m?.from) return false;
+  const telegramId = String(m.from.id);
+  const now = m.date;
+
+  if (command === "/shop") {
+    const result = await env.DB.prepare(`SELECT id, title, description, category, price_xp, quantity
+      FROM rewards WHERE is_active = 1 AND (quantity IS NULL OR quantity > 0)
+      ORDER BY category, price_xp ASC LIMIT 20`).all<{
+        id: number; title: string; description: string; category: string; price_xp: number; quantity: number | null;
+      }>();
+    const lines = (result.results ?? []).map(item =>
+      `#${item.id} · ${item.title} — ${item.price_xp} XP [${item.category}]${item.quantity === null ? "" : ` · осталось: ${item.quantity}`}`);
+    await sendTelegramMessage(env, m.chat.id, lines.length
+      ? `Магазин НК\\n${lines.join("\\n")}\\nПокупка: /buy ID`
+      : "Магазин пока пуст.");
+    return true;
+  }
+
+  if (command === "/buy") {
+    const rewardId = Number(args.trim());
+    if (!Number.isSafeInteger(rewardId) || rewardId < 1) {
+      await sendTelegramMessage(env, m.chat.id, "Формат: /buy ID");
+      return true;
+    }
+    const results = await env.DB.batch([
+      env.DB.prepare(`INSERT INTO reward_purchases (telegram_id, reward_id, price_xp, status, created_at)
+        SELECT ?, r.id, r.price_xp, 'pending', ?
+        FROM rewards r JOIN xp_wallets w ON w.telegram_id = ?
+        WHERE r.id = ? AND r.is_active = 1 AND (r.quantity IS NULL OR r.quantity > 0)
+          AND w.available_xp >= r.price_xp`).bind(telegramId, now, telegramId, rewardId),
+      env.DB.prepare(`UPDATE xp_wallets SET available_xp = available_xp -
+        (SELECT price_xp FROM reward_purchases WHERE id = last_insert_rowid())
+        WHERE telegram_id = ? AND changes() = 1`).bind(telegramId),
+      env.DB.prepare(`UPDATE rewards SET quantity = CASE WHEN quantity IS NULL THEN NULL ELSE quantity - 1 END
+        WHERE id = ? AND (quantity IS NULL OR quantity > 0) AND changes() = 1`).bind(rewardId),
+      env.DB.prepare(`INSERT INTO xp_transactions
+        (telegram_id, amount, transaction_type, source_id, note, created_at)
+        SELECT telegram_id, -price_xp, 'purchase', CAST(last_insert_rowid() AS TEXT), 'Покупка в магазине', ?
+        FROM reward_purchases WHERE id = last_insert_rowid() AND changes() = 1`).bind(now)
+    ]);
+    const purchaseId = results[0]?.meta.last_row_id;
+    if ((results[0]?.meta.changes ?? 0) === 0 || !purchaseId) {
+      await sendTelegramMessage(env, m.chat.id, "Не удалось оформить покупку: проверь ID товара, наличие и баланс XP.");
+      return true;
+    }
+    await sendTelegramMessage(env, m.chat.id,
+      `Заявка #${purchaseId} оформлена. Списано XP: сумма покупки. Ожидай подтверждения администрации.`);
+    return true;
+  }
+
+  if (command === "/myorders") {
+    const result = await env.DB.prepare(`SELECT p.id, r.title, p.price_xp, p.status, p.created_at
+      FROM reward_purchases p JOIN rewards r ON r.id = p.reward_id
+      WHERE p.telegram_id = ? ORDER BY p.created_at DESC LIMIT 10`).bind(telegramId).all<{
+        id: number; title: string; price_xp: number; status: string; created_at: number;
+      }>();
+    const lines = (result.results ?? []).map(p => `#${p.id} · ${p.title} — ${p.price_xp} XP · ${p.status}`);
+    await sendTelegramMessage(env, m.chat.id, lines.length ? `Твои заявки:\\n${lines.join("\\n")}` : "У тебя пока нет покупок.");
+    return true;
+  }
+
+  if (command === "/addreward") {
+    if (!(await isAdmin(env, telegramId))) {
+      await sendTelegramMessage(env, m.chat.id, "Недостаточно прав.");
+      return true;
+    }
+    const parts = args.split("|").map(part => part.trim());
+    const [category, title, rawPrice, description = ""] = parts;
+    const price = Number(rawPrice);
+    if (!category || !title || title.length > 80 || !Number.isSafeInteger(price) || price < 1) {
+      await sendTelegramMessage(env, m.chat.id, "Формат: /addreward категория | название | цена_XP | описание");
+      return true;
+    }
+    const result = await env.DB.prepare(`INSERT INTO rewards
+      (title, description, category, price_xp, quantity, is_active)
+      VALUES (?, ?, ?, ?, NULL, 1)`).bind(title, description, category, price).run();
+    await sendTelegramMessage(env, m.chat.id, `Товар добавлен. ID: ${result.meta.last_row_id}`);
+    return true;
+  }
+
+  if (command === "/approve" || command === "/reject") {
+    if (!(await isAdmin(env, telegramId))) {
+      await sendTelegramMessage(env, m.chat.id, "Недостаточно прав.");
+      return true;
+    }
+    const purchaseId = Number(args.trim());
+    if (!Number.isSafeInteger(purchaseId) || purchaseId < 1) {
+      await sendTelegramMessage(env, m.chat.id, `Формат: ${command} ID_заявки`);
+      return true;
+    }
+    if (command === "/approve") {
+      const result = await env.DB.prepare(`UPDATE reward_purchases SET status = 'approved'
+        WHERE id = ? AND status = 'pending'`).bind(purchaseId).run();
+      await sendTelegramMessage(env, m.chat.id, (result.meta.changes ?? 0) > 0
+        ? `Заявка #${purchaseId} одобрена.` : "Заявка не найдена или уже обработана.");
+      return true;
+    }
+    const results = await env.DB.batch([
+      env.DB.prepare("UPDATE reward_purchases SET status = 'rejected' WHERE id = ? AND status = 'pending'")
+        .bind(purchaseId),
+      env.DB.prepare(`INSERT OR IGNORE INTO xp_transactions
+        (telegram_id, amount, transaction_type, source_id, note, created_at)
+        SELECT telegram_id, price_xp, 'purchase_refund', CAST(id AS TEXT), 'Возврат за отклонённую покупку', ?
+        FROM reward_purchases WHERE id = ? AND status = 'rejected' AND changes() = 1`)
+        .bind(now, purchaseId),
+      env.DB.prepare(`UPDATE xp_wallets SET available_xp = available_xp +
+        (SELECT amount FROM xp_transactions WHERE transaction_type = 'purchase_refund' AND source_id = ?)
+        WHERE telegram_id = (SELECT telegram_id FROM reward_purchases WHERE id = ?)
+          AND changes() = 1`).bind(String(purchaseId), purchaseId),
+      env.DB.prepare(`UPDATE rewards SET quantity = CASE WHEN quantity IS NULL THEN NULL ELSE quantity + 1 END
+        WHERE id = (SELECT reward_id FROM reward_purchases WHERE id = ?)
+          AND changes() = 1`).bind(purchaseId)
+    ]);
+    await sendTelegramMessage(env, m.chat.id, (results[0]?.meta.changes ?? 0) > 0
+      ? `Заявка #${purchaseId} отклонена, XP возвращены.`
+      : "Заявка не найдена или уже обработана.");
+    return true;
+  }
+  return false;
+}
+
 async function sendTelegramMessage(env: Env, chatId: number, text: string): Promise<void> {
   if (!env.TELEGRAM_BOT_TOKEN) return;
   const response = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
@@ -220,6 +349,9 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
   if (m.chat.type !== "private" && env.TARGET_CHAT_ID && String(m.chat.id) !== env.TARGET_CHAT_ID) return;
   const command = text.split(/\s+/, 1)[0].split("@", 1)[0].toLowerCase();
   const telegramId = String(m.from.id);
+
+  const handledShop = await handleShopCommand(env, update, command, text.slice(text.indexOf(" ") + 1));
+  if (handledShop) return;
 
   if (command === "/start" || command === "/help") {
     await sendTelegramMessage(env, m.chat.id,
