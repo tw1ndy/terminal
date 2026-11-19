@@ -5,6 +5,7 @@ export interface Env {
   TELEGRAM_WEBHOOK_SECRET?: string;
   OWNER_TELEGRAM_ID?: string;
   WEB_ADMIN_SECRET?: string;
+  WEB_ADMIN_URL?: string;
   TARGET_CHAT_ID?: string;
   APP_TIMEZONE: string;
   APP_ENV: string;
