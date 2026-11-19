@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { Env, TelegramUpdate } from "./types";
-import { dailyMessageMilestone, dailyRewardAmount, nextDailyClaimStreak, previousDay } from "./rewards";
+import { dailyMessageMilestones, dailyRewardAmount, nextDailyClaimStreak, previousDay } from "./rewards";
 
 const app = new Hono<{ Bindings: Env }>();
 const DEFAULT_MESSAGE_XP = 3;
@@ -453,36 +453,54 @@ async function recordGroupMessage(env: Env, update: TelegramUpdate): Promise<voi
     env.DB.prepare("INSERT OR IGNORE INTO xp_wallets (telegram_id) VALUES (?)").bind(telegramId)
   ]);
 
-  // The event insert is the idempotency boundary for message rewards and counters.
-  const event = await env.DB.prepare(`INSERT OR IGNORE INTO message_events
+  // Persist the Telegram event first. A retry can resume rewards without double-counting stats.
+  await env.DB.prepare(`INSERT OR IGNORE INTO message_events
     (telegram_id, chat_id, message_id, event_day, created_at) VALUES (?, ?, ?, ?, ?)`)
     .bind(telegramId, chatId, messageId, day, m.date).run();
-  if ((event.meta.changes ?? 0) === 0) return;
+
+  await env.DB.batch([
+    env.DB.prepare(`UPDATE user_stats SET
+      message_count = message_count + 1,
+      current_streak = CASE
+        WHEN last_activity_day = ? THEN current_streak
+        WHEN last_activity_day = date(?, '-1 day') THEN current_streak + 1
+        ELSE 1 END,
+      longest_streak = MAX(longest_streak, CASE
+        WHEN last_activity_day = ? THEN current_streak
+        WHEN last_activity_day = date(?, '-1 day') THEN current_streak + 1
+        ELSE 1 END),
+      last_activity_day = ?
+      WHERE telegram_id = ? AND EXISTS (
+        SELECT 1 FROM message_events WHERE chat_id = ? AND message_id = ? AND stats_applied = 0
+      )`).bind(day, day, day, day, day, telegramId, chatId, messageId),
+    env.DB.prepare(`UPDATE message_events SET
+      stats_applied = 1,
+      message_count_snapshot = (SELECT message_count FROM user_stats WHERE telegram_id = ?),
+      streak_snapshot = (SELECT current_streak FROM user_stats WHERE telegram_id = ?)
+      WHERE chat_id = ? AND message_id = ? AND stats_applied = 0 AND changes() = 1`)
+      .bind(telegramId, telegramId, chatId, messageId)
+  ]);
+  const eventStats = await env.DB.prepare(`SELECT message_count_snapshot, streak_snapshot
+    FROM message_events WHERE chat_id = ? AND message_id = ?`)
+    .bind(chatId, messageId).first<{ message_count_snapshot: number | null; streak_snapshot: number | null }>();
+  const count = eventStats?.message_count_snapshot ?? 0;
+  const streak = eventStats?.streak_snapshot ?? 0;
   await detectFlood(env, telegramId, m.chat.id, m.date);
-
-  const stats = await env.DB.prepare("SELECT message_count, current_streak, last_activity_day FROM user_stats WHERE telegram_id = ?")
-    .bind(telegramId).first<{ message_count: number; current_streak: number; last_activity_day: string | null }>();
-  const previous = stats?.last_activity_day ?? null;
-  const streak = previous === day ? (stats?.current_streak ?? 0)
-    : previous === previousDay(day) ? (stats?.current_streak ?? 0) + 1 : 1;
-
-  await env.DB.prepare(`UPDATE user_stats SET message_count = message_count + 1,
-    current_streak = ?, longest_streak = MAX(longest_streak, ?), last_activity_day = ?
-    WHERE telegram_id = ?`).bind(streak, streak, day, telegramId).run();
 
   await awardDailyXp(env, telegramId, day, "message", sourceKey,
     await getSetting(env, "message_xp", DEFAULT_MESSAGE_XP), "XP за сообщение", m.date);
 
   // Daily activity and message-count milestones share the same 200 XP daily cap.
   await awardDailyXp(env, telegramId, day, "daily_activity", day, 15, "Ежедневная активность", m.date);
-  const count = (stats?.message_count ?? 0) + 1;
   const dailyCountRow = await env.DB.prepare(
     "SELECT COUNT(*) AS count FROM message_events WHERE telegram_id = ? AND event_day = ?"
   ).bind(telegramId, day).first<{ count: number }>();
   const dailyCount = dailyCountRow?.count ?? 0;
-  const milestone = dailyMessageMilestone(dailyCount);
-  if (milestone) await awardDailyXp(env, telegramId, day, "message_milestone",
-    `${milestone.sourceKey}:${day}`, milestone.amount, milestone.note, m.date);
+  const milestones = dailyMessageMilestones(dailyCount);
+  for (const milestone of milestones) {
+    await awardDailyXp(env, telegramId, day, "message_milestone",
+      `${milestone.sourceKey}:${day}`, milestone.amount, milestone.note, m.date);
+  }
   if (streak === 7) await awardDailyXp(env, telegramId, day, "streak_milestone", `7:${day}`, 50, "Серия 7 дней", m.date);
   if (streak === 30) await awardDailyXp(env, telegramId, day, "streak_milestone", `30:${day}`, 200, "Серия 30 дней", m.date);
 
