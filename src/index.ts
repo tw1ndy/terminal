@@ -100,6 +100,30 @@ async function awardDailyXp(
   return row?.amount ?? 0;
 }
 
+async function detectFlood(env: Env, telegramId: string, chatId: number, now: number): Promise<void> {
+  const recent = await env.DB.prepare(`SELECT COUNT(*) AS count FROM message_events
+    WHERE telegram_id = ? AND created_at >= ?`).bind(telegramId, now - 10).first<{ count: number }>();
+  if ((recent?.count ?? 0) < 8) return;
+
+  const cooldown = await env.DB.prepare(`SELECT 1 AS found FROM anti_fraud_events
+    WHERE telegram_id = ? AND event_type = 'flood' AND created_at >= ? LIMIT 1`)
+    .bind(telegramId, now - 600).first();
+  if (cooldown) return;
+
+  await env.DB.prepare(`INSERT INTO anti_fraud_events
+    (telegram_id, event_type, details_json, created_at)
+    VALUES (?, 'flood', ?, ?)`)
+    .bind(telegramId, JSON.stringify({ messages_in_10_seconds: recent?.count ?? 0 }), now).run();
+
+  await sendTelegramMessage(env, chatId,
+    "Предупреждение: слишком частые сообщения. Сделай паузу, чтобы не засорять чат.");
+  const admins = await env.DB.prepare("SELECT telegram_id FROM admins WHERE is_active = 1").all<{ telegram_id: string }>();
+  for (const admin of admins.results ?? []) {
+    await sendTelegramMessage(env, Number(admin.telegram_id),
+      `Антифрод: возможный флуд. Telegram ID: ${telegramId}; сообщений за 10 секунд: ${recent?.count ?? 0}. XP автоматически не списывались.`);
+  }
+}
+
 async function grantAchievement(env: Env, telegramId: string, achievementId: string, now: number): Promise<void> {
   await env.DB.prepare(`INSERT OR IGNORE INTO user_achievements (telegram_id, achievement_id, earned_at)
     SELECT ?, id, ? FROM achievements WHERE id = ? AND is_active = 1`)
@@ -301,6 +325,7 @@ async function recordGroupMessage(env: Env, update: TelegramUpdate): Promise<voi
     (telegram_id, chat_id, message_id, event_day, created_at) VALUES (?, ?, ?, ?, ?)`)
     .bind(telegramId, chatId, messageId, day, m.date).run();
   if ((event.meta.changes ?? 0) === 0) return;
+  await detectFlood(env, telegramId, m.chat.id, m.date);
 
   const stats = await env.DB.prepare("SELECT message_count, current_streak, last_activity_day FROM user_stats WHERE telegram_id = ?")
     .bind(telegramId).first<{ message_count: number; current_streak: number; last_activity_day: string | null }>();
