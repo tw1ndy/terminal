@@ -942,8 +942,45 @@ app.get("/api/admin/dashboard", async c => {
     purchases: purchases.results ?? [],
     penalties: penalties.results ?? [],
     logs: logs.results ?? [],
-    fraudEvents: fraudEvents.results ?? []
+    fraudEvents: fraudEvents.results ?? [],
+    settings: {
+      messageXp: await getSetting(c.env, "message_xp", DEFAULT_MESSAGE_XP),
+      dailyXpCap: await getSetting(c.env, "daily_xp_cap", DEFAULT_DAILY_CAP),
+      seasonDays: await getSetting(c.env, "season_days", 30)
+    }
   });
+});
+
+app.post("/api/admin/settings", async c => {
+  const actorId = await authorizeWebAdmin(c);
+  if (!actorId) return c.json({ error: "unauthorized" }, 401);
+  let body: { messageXp?: number; dailyXpCap?: number; seasonDays?: number };
+  try { body = await c.req.json(); } catch { return c.json({ error: "invalid_json" }, 400); }
+  const messageXp = Number(body.messageXp);
+  const dailyXpCap = Number(body.dailyXpCap);
+  const seasonDays = Number(body.seasonDays);
+  if (!Number.isSafeInteger(messageXp) || messageXp < 1 || messageXp > 20 ||
+      !Number.isSafeInteger(dailyXpCap) || dailyXpCap < 50 || dailyXpCap > 5000 ||
+      !Number.isSafeInteger(seasonDays) || seasonDays < 7 || seasonDays > 90) {
+    return c.json({ error: "invalid_settings" }, 400);
+  }
+  const now = Math.floor(Date.now() / 1000);
+  await c.env.DB.batch([
+    c.env.DB.prepare(`INSERT INTO settings (key, value_json, updated_at, updated_by)
+      VALUES ('message_xp', ?, ?, ?) ON CONFLICT(key) DO UPDATE SET
+      value_json = excluded.value_json, updated_at = excluded.updated_at, updated_by = excluded.updated_by`)
+      .bind(JSON.stringify(messageXp), now, actorId),
+    c.env.DB.prepare(`INSERT INTO settings (key, value_json, updated_at, updated_by)
+      VALUES ('daily_xp_cap', ?, ?, ?) ON CONFLICT(key) DO UPDATE SET
+      value_json = excluded.value_json, updated_at = excluded.updated_at, updated_by = excluded.updated_by`)
+      .bind(JSON.stringify(dailyXpCap), now, actorId),
+    c.env.DB.prepare(`INSERT INTO settings (key, value_json, updated_at, updated_by)
+      VALUES ('season_days', ?, ?, ?) ON CONFLICT(key) DO UPDATE SET
+      value_json = excluded.value_json, updated_at = excluded.updated_at, updated_by = excluded.updated_by`)
+      .bind(JSON.stringify(seasonDays), now, actorId)
+  ]);
+  await logAdminAction(c.env, actorId, "settings_updated", null, { messageXp, dailyXpCap, seasonDays }, now);
+  return c.json({ ok: true });
 });
 
 app.post("/api/admin/purchases/:id/:action", async c => {
