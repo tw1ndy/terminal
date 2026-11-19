@@ -170,10 +170,10 @@ async function recordGroupMessage(env: Env, update: TelegramUpdate): Promise<voi
     "SELECT COUNT(*) AS count FROM message_events WHERE telegram_id = ? AND event_day = ?"
   ).bind(telegramId, day).first<{ count: number }>();
   const dailyCount = dailyCountRow?.count ?? 0;
-  if (dailyCount === 50) await awardDailyXp(env, telegramId, day, "message_milestone", "50", 20, "50 сообщений за день", m.date);
-  if (dailyCount === 100) await awardDailyXp(env, telegramId, day, "message_milestone", "100", 35, "100 сообщений за день", m.date);
-  if (streak === 7) await awardDailyXp(env, telegramId, day, "streak_milestone", "7", 50, "Серия 7 дней", m.date);
-  if (streak === 30) await awardDailyXp(env, telegramId, day, "streak_milestone", "30", 200, "Серия 30 дней", m.date);
+  if (dailyCount === 50) await awardDailyXp(env, telegramId, day, "message_milestone", `50:${day}`, 20, "50 сообщений за день", m.date);
+  if (dailyCount === 100) await awardDailyXp(env, telegramId, day, "message_milestone", `100:${day}`, 35, "100 сообщений за день", m.date);
+  if (streak === 7) await awardDailyXp(env, telegramId, day, "streak_milestone", `7:${day}`, 50, "Серия 7 дней", m.date);
+  if (streak === 30) await awardDailyXp(env, telegramId, day, "streak_milestone", `30:${day}`, 200, "Серия 30 дней", m.date);
 
   if (count === 1) await grantAchievement(env, telegramId, "first_message", m.date);
   if (count >= 100) await grantAchievement(env, telegramId, "messages_100", m.date);
@@ -190,22 +190,11 @@ async function claimDailyReward(env: Env, telegramId: string, now: number): Prom
     .bind(telegramId).first();
   if (!existing) return "Сначала напиши сообщение в основной группе, чтобы создать профиль.";
 
-  const last = await env.DB.prepare(`SELECT reward_day FROM daily_rewards
-    WHERE telegram_id = ? AND reward_type = 'daily_claim' ORDER BY reward_day DESC LIMIT 1`)
-    .bind(telegramId).first<{ reward_day: string }>();
-  const yesterday = previousDay(day);
-  let streak = last?.reward_day === yesterday ? 1 : 0;
-  if (streak) {
-    const prior = await env.DB.prepare(`SELECT COUNT(*) AS days FROM daily_rewards
-      WHERE telegram_id = ? AND reward_type = 'daily_claim' AND reward_day >= date(?, '-6 day') AND reward_day <= ?`)
-      .bind(telegramId, yesterday, yesterday).first<{ days: number }>();
-    streak = Math.min((prior?.days ?? 0) + 1, 7);
-  } else if (last?.reward_day === day) {
-    return "Ежедневная награда уже получена сегодня.";
-  } else {
-    streak = 1;
-  }
-  if (last?.reward_day === day) {
+  const recentClaims = await env.DB.prepare(`SELECT reward_day FROM daily_rewards
+    WHERE telegram_id = ? AND reward_type = 'daily_claim'
+    ORDER BY reward_day DESC LIMIT 7`).bind(telegramId).all<{ reward_day: string }>();
+  const claimDays = (recentClaims.results ?? []).map(row => row.reward_day);
+  if (claimDays[0] === day) {
     // Recover safely if a previous request stored the claim but was interrupted before XP credit.
     const saved = await env.DB.prepare(`SELECT xp_amount FROM daily_rewards
       WHERE telegram_id = ? AND reward_day = ? AND reward_type = 'daily_claim'`)
@@ -215,6 +204,15 @@ async function claimDailyReward(env: Env, telegramId: string, now: number): Prom
     return recovered > 0 ? `Награда восстановлена: +${recovered} XP.` : "Ежедневная награда уже получена сегодня.";
   }
 
+  const yesterday = previousDay(day);
+  let consecutive = 0;
+  let expected = yesterday;
+  for (const claimDay of claimDays) {
+    if (claimDay !== expected) break;
+    consecutive += 1;
+    expected = previousDay(expected);
+  }
+  const streak = Math.min(consecutive + 1, 7);
   const amounts = [10, 15, 20, 25, 30, 50, 100];
   const amount = amounts[streak - 1] ?? 10;
   const inserted = await env.DB.prepare(`INSERT OR IGNORE INTO daily_rewards
