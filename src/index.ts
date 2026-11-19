@@ -309,7 +309,7 @@ async function hasPermission(env: Env, telegramId: string, permission: string): 
   const roleDefaults: Record<string, string[]> = {
     owner: ["*"],
     chief_admin: ["*"],
-    admin: ["panel.access", "stats.view", "shop.manage", "shop.review", "penalty.propose", "penalty.review", "antifraud.review"],
+    admin: ["panel.access", "stats.view", "shop.manage", "shop.review", "penalty.propose", "penalty.review", "antifraud.review", "rewards.award"],
     moderator: ["panel.access", "stats.view", "penalty.propose", "penalty.review", "antifraud.review"]
   };
   const defaults = roleDefaults[admin.role] ?? [];
@@ -752,6 +752,35 @@ async function claimDailyReward(env: Env, telegramId: string, now: number): Prom
     : "Дневной лимит XP уже достигнут. Награда отмечена, но XP сегодня не начислены.";
 }
 
+async function awardSpecialXp(
+  env: Env,
+  targetId: string,
+  amount: number,
+  transactionType: "event_bonus" | "contest_bonus",
+  sourceId: string,
+  note: string,
+  actorId: string,
+  now: number
+): Promise<boolean> {
+  const results = await env.DB.batch([
+    env.DB.prepare(`INSERT OR IGNORE INTO xp_transactions
+      (telegram_id, amount, transaction_type, source_id, note, created_at, created_by)
+      SELECT telegram_id, ?, ?, ?, ?, ?, ? FROM users WHERE telegram_id = ? AND is_active = 1`)
+      .bind(amount, transactionType, sourceId, note, now, actorId, targetId),
+    env.DB.prepare(`UPDATE xp_wallets SET lifetime_xp = lifetime_xp + ?,
+      available_xp = available_xp + ?, season_xp = season_xp + ?
+      WHERE telegram_id = ? AND changes() = 1`)
+      .bind(amount, amount, amount, targetId),
+    env.DB.prepare(`INSERT INTO season_stats (season_id, telegram_id, season_xp)
+      SELECT id, ?, ? FROM seasons WHERE status = 'active' AND changes() = 1
+      ON CONFLICT(season_id, telegram_id) DO UPDATE SET season_xp = season_xp + excluded.season_xp`)
+      .bind(targetId, amount)
+  ]);
+  if ((results[0]?.meta.changes ?? 0) !== 1) return false;
+  await logAdminAction(env, actorId, transactionType, targetId, { amount, note, sourceId }, now);
+  return true;
+}
+
 async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
   const m = update.message;
   const text = m?.text?.trim();
@@ -762,6 +791,41 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
 
   const handledShop = await handleShopCommand(env, update, command, text.slice(text.indexOf(" ") + 1));
   if (handledShop) return;
+
+  if (command === "/eventxp" || command === "/contestxp") {
+    if (!(await hasPermission(env, telegramId, "rewards.award"))) {
+      await sendTelegramMessage(env, m.chat.id, "Недостаточно прав.");
+      return;
+    }
+    const match = text.match(/^\\/((?:eventxp)|(?:contestxp))\\s+(\\d+)(?:\\s*\\|\\s*(.{3,120}))?$/i);
+    if (!match) {
+      await sendTelegramMessage(env, m.chat.id,
+        "Формат: /eventxp TELEGRAM_ID | причина ( +30 XP ) или /contestxp TELEGRAM_ID | причина ( +100 XP ).");
+      return;
+    }
+    const targetId = match[2];
+    const isEvent = command === "/eventxp";
+    const amount = isEvent ? 30 : 100;
+    const reason = (match[3] ?? (isEvent ? "Участие в событии" : "Победа в конкурсе")).trim();
+    const sourceId = `${isEvent ? "event" : "contest"}:${update.update_id}`;
+    const granted = await awardSpecialXp(
+      env, targetId, amount, isEvent ? "event_bonus" : "contest_bonus",
+      sourceId, reason, telegramId, m.date
+    );
+    if (!granted) {
+      const existing = await env.DB.prepare(`SELECT id FROM xp_transactions
+        WHERE telegram_id = ? AND transaction_type = ? AND source_id = ?`)
+        .bind(targetId, isEvent ? "event_bonus" : "contest_bonus", sourceId)
+        .first<{ id: number }>();
+      await sendTelegramMessage(env, m.chat.id, existing
+        ? "Эта награда уже была обработана."
+        : "Участник не найден, неактивен или его профиль ещё не создан.");
+      return;
+    }
+    await sendTelegramMessage(env, m.chat.id,
+      `Награда начислена участнику ${targetId}: +${amount} XP. Причина: ${reason}. Дневной лимит обычной активности не затронут.`);
+    return;
+  }
 
   if (command === "/adminpanel") {
     if (!(await isAdmin(env, telegramId))) {
