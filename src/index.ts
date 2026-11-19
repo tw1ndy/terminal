@@ -683,10 +683,10 @@ async function recordGroupMessage(env: Env, update: TelegramUpdate): Promise<voi
     env.DB.prepare(`INSERT OR IGNORE INTO users
       (telegram_id, username, first_name, last_name, joined_at, last_seen_at)
       VALUES (?, ?, ?, ?, ?, ?)`)
-      .bind(telegramId, m.from.username ?? null, m.from.first_name ?? "", null, m.date, m.date),
-    env.DB.prepare(`UPDATE users SET username = ?, first_name = ?, last_seen_at = ?
+      .bind(telegramId, m.from.username ?? null, m.from.first_name ?? "", m.from.last_name ?? null, m.date, m.date),
+    env.DB.prepare(`UPDATE users SET username = ?, first_name = ?, last_name = ?, last_seen_at = ?
       WHERE telegram_id = ?`)
-      .bind(m.from.username ?? null, m.from.first_name ?? "", m.date, telegramId),
+      .bind(m.from.username ?? null, m.from.first_name ?? "", m.from.last_name ?? null, m.date, telegramId),
     env.DB.prepare("INSERT OR IGNORE INTO user_stats (telegram_id) VALUES (?)").bind(telegramId),
     env.DB.prepare("INSERT OR IGNORE INTO xp_wallets (telegram_id) VALUES (?)").bind(telegramId)
   ]);
