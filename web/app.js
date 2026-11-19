@@ -77,7 +77,7 @@
     rows.forEach(row => {
       const item = node("div", "item member-item");
       const main = node("div", "item-main");
-      const name = row.first_name || row.last_name || (row.username ? "@" + row.username : "Участник");
+      const name = [row.first_name, row.last_name].filter(Boolean).join(" ") || (row.username ? "@" + row.username : "Участник");
       main.append(node("div", "item-title", name + (row.username ? " · @" + row.username : "")));
       main.append(node("div", "item-meta", "ID " + row.telegram_id + " · " + (row.is_active ? "Активен" : "Неактивен") + " · Регистрация: " + date(row.joined_at) + " · Последняя активность: " + date(row.last_seen_at)));
       main.append(node("div", "item-meta", "Lifetime: " + number(row.lifetime_xp) + " XP · Доступно: " + number(row.available_xp) + " XP · Сезон: " + number(row.season_xp) + " XP"));
