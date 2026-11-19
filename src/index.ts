@@ -140,6 +140,7 @@ async function logAdminAction(
 }
 
 async function isAdmin(env: Env, telegramId: string): Promise<boolean> {
+  if (env.OWNER_TELEGRAM_ID && telegramId === env.OWNER_TELEGRAM_ID) return true;
   const row = await env.DB.prepare("SELECT 1 AS allowed FROM admins WHERE telegram_id = ? AND is_active = 1")
     .bind(telegramId).first();
   return Boolean(row);
