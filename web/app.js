@@ -83,6 +83,7 @@
     $("settingMessageXp").value = data.settings.messageXp;
     $("settingDailyCap").value = data.settings.dailyXpCap;
     $("settingSeasonDays").value = data.settings.seasonDays;
+    $("settingLevelThresholds").value = JSON.stringify(data.settings.levelThresholds || {}, null, 2);
     renderQueue($("purchases"), data.purchases, "purchase", data.permissions.shopReview);
     renderQueue($("penalties"), data.penalties, "penalty", data.permissions.penaltyReview);
 
@@ -162,13 +163,14 @@
         body: JSON.stringify({
           messageXp: Number($("settingMessageXp").value),
           dailyXpCap: Number($("settingDailyCap").value),
-          seasonDays: Number($("settingSeasonDays").value)
+          seasonDays: Number($("settingSeasonDays").value),
+          levelThresholds: JSON.parse($("settingLevelThresholds").value || "{}")
         })
       });
       setNotice("Параметры экономики сохранены.", "success");
       await load();
     } catch (error) {
-      setNotice(error.message === "invalid_settings" ? "Проверь значения: XP за сообщение 1–20, лимит 50–5000, сезон 7–90 дней." : error.message, "error");
+      setNotice(error.message === "invalid_settings" ? "Проверь экономику и пороги уровней: уровень 1 = 0 XP, уровни подряд, каждый следующий порог выше предыдущего; максимум 100 уровней." : (error instanceof SyntaxError ? "Пороги уровней должны быть корректным JSON-объектом." : error.message), "error");
     } finally { button.disabled = false; }
   });
   $("refresh").addEventListener("click", load);
