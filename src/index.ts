@@ -852,7 +852,7 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
       title = command === "/topday" ? "Топ за сегодня" : command === "/topweek" ? "Топ за неделю" : "Топ за месяц";
       const query = await env.DB.prepare(`SELECT u.first_name, u.username, SUM(x.amount) AS value, u.joined_at
         FROM xp_transactions x JOIN users u ON u.telegram_id = x.telegram_id
-        WHERE x.amount > 0 AND x.transaction_type != 'purchase_refund' AND x.created_at >= ?
+        WHERE x.amount > 0 AND x.transaction_type NOT IN ('purchase_refund', 'weekly_reward') AND x.created_at >= ?
         GROUP BY x.telegram_id ORDER BY value DESC, u.joined_at ASC LIMIT 10`).bind(since).all<{
           first_name: string; username: string | null; value: number; joined_at: number;
         }>();
