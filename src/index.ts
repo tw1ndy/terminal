@@ -501,7 +501,7 @@ async function claimDailyReward(env: Env, telegramId: string, now: number): Prom
 
   const recentClaims = await env.DB.prepare(`SELECT reward_day FROM daily_rewards
     WHERE telegram_id = ? AND reward_type = 'daily_claim'
-    ORDER BY reward_day DESC LIMIT 7`).bind(telegramId).all<{ reward_day: string }>();
+    ORDER BY reward_day DESC LIMIT 10000`).bind(telegramId).all<{ reward_day: string }>();
   const claimDays = (recentClaims.results ?? []).map(row => row.reward_day);
   if (claimDays[0] === day) {
     // Recover safely if a previous request stored the claim but was interrupted before XP credit.
@@ -522,7 +522,7 @@ async function claimDailyReward(env: Env, telegramId: string, now: number): Prom
 
   const granted = await awardDailyXp(env, telegramId, day, "daily_claim", day, amount, "Ежедневная награда", now);
   return granted > 0
-    ? `Ежедневная награда: +${granted} XP. День серии: ${streak}/7.`
+    ? `Ежедневная награда: +${granted} XP. День серии: ${streak}.`
     : "Дневной лимит XP уже достигнут. Награда отмечена, но XP сегодня не начислены.";
 }
 
