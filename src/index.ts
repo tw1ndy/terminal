@@ -33,31 +33,38 @@ async function awardDailyXp(
 ): Promise<number> {
   if (requestedAmount <= 0) return 0;
   const cap = await getSetting(env, "daily_xp_cap", DEFAULT_DAILY_CAP);
-  const inserted = await env.DB.prepare(`
-    INSERT OR IGNORE INTO daily_xp_ledger
-      (telegram_id, reward_day, source_type, source_key, amount, created_at)
-    SELECT ?, ?, ?, ?, MIN(?, MAX(0, ? - COALESCE(
-      (SELECT SUM(amount) FROM daily_xp_ledger WHERE telegram_id = ? AND reward_day = ?), 0
-    ))), ?
-  `).bind(telegramId, day, sourceType, sourceKey, requestedAmount, cap, telegramId, day, createdAt).run();
-
-  if ((inserted.meta.changes ?? 0) === 0) return 0;
-  const ledger = await env.DB.prepare(`
-    SELECT amount FROM daily_xp_ledger
-    WHERE telegram_id = ? AND reward_day = ? AND source_type = ? AND source_key = ?
-  `).bind(telegramId, day, sourceType, sourceKey).first<{ amount: number }>();
-  const amount = ledger?.amount ?? 0;
-  if (amount <= 0) return 0;
-
-  await env.DB.batch([
-    env.DB.prepare(`UPDATE xp_wallets SET
-      lifetime_xp = lifetime_xp + ?, available_xp = available_xp + ?, season_xp = season_xp + ?
-      WHERE telegram_id = ?`).bind(amount, amount, amount, telegramId),
-    env.DB.prepare(`INSERT OR IGNORE INTO xp_transactions
-      (telegram_id, amount, transaction_type, source_id, note, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)`).bind(telegramId, amount, sourceType, sourceKey, note, createdAt)
+  // Keep ledger insertion, transaction creation and wallet credit in one D1 batch.
+  // The unique transaction key makes retries safe; changes() gates the wallet increment.
+  const results = await env.DB.batch([
+    env.DB.prepare(`
+      INSERT OR IGNORE INTO daily_xp_ledger
+        (telegram_id, reward_day, source_type, source_key, amount, created_at)
+      SELECT ?, ?, ?, ?, MIN(?, MAX(0, ? - COALESCE(
+        (SELECT SUM(amount) FROM daily_xp_ledger WHERE telegram_id = ? AND reward_day = ?), 0
+      ))), ?
+    `).bind(telegramId, day, sourceType, sourceKey, requestedAmount, cap, telegramId, day, createdAt),
+    env.DB.prepare(`
+      INSERT OR IGNORE INTO xp_transactions
+        (telegram_id, amount, transaction_type, source_id, note, created_at)
+      SELECT ?, amount, ?, ?, ?, ?
+      FROM daily_xp_ledger
+      WHERE telegram_id = ? AND reward_day = ? AND source_type = ? AND source_key = ? AND amount > 0
+    `).bind(telegramId, sourceType, sourceKey, note, createdAt, telegramId, day, sourceType, sourceKey),
+    env.DB.prepare(`
+      UPDATE xp_wallets SET
+        lifetime_xp = lifetime_xp + (SELECT amount FROM xp_transactions WHERE telegram_id = ? AND transaction_type = ? AND source_id = ?),
+        available_xp = available_xp + (SELECT amount FROM xp_transactions WHERE telegram_id = ? AND transaction_type = ? AND source_id = ?),
+        season_xp = season_xp + (SELECT amount FROM xp_transactions WHERE telegram_id = ? AND transaction_type = ? AND source_id = ?)
+      WHERE telegram_id = ? AND changes() = 1
+    `).bind(telegramId, sourceType, sourceKey, telegramId, sourceType, sourceKey,
+      telegramId, sourceType, sourceKey, telegramId)
   ]);
-  return amount;
+  const transactionCreated = results[1]?.meta.changes ?? 0;
+  if (transactionCreated === 0) return 0;
+  const row = await env.DB.prepare(
+    "SELECT amount FROM daily_xp_ledger WHERE telegram_id = ? AND reward_day = ? AND source_type = ? AND source_key = ?"
+  ).bind(telegramId, day, sourceType, sourceKey).first<{ amount: number }>();
+  return row?.amount ?? 0;
 }
 
 async function grantAchievement(env: Env, telegramId: string, achievementId: string, now: number): Promise<void> {
@@ -160,7 +167,15 @@ async function claimDailyReward(env: Env, telegramId: string, now: number): Prom
   } else {
     streak = 1;
   }
-  if (last?.reward_day === day) return "Ежедневная награда уже получена сегодня.";
+  if (last?.reward_day === day) {
+    // Recover safely if a previous request stored the claim but was interrupted before XP credit.
+    const saved = await env.DB.prepare(`SELECT xp_amount FROM daily_rewards
+      WHERE telegram_id = ? AND reward_day = ? AND reward_type = 'daily_claim'`)
+      .bind(telegramId, day).first<{ xp_amount: number }>();
+    const recovered = await awardDailyXp(env, telegramId, day, "daily_claim", day,
+      saved?.xp_amount ?? 0, "Ежедневная награда", now);
+    return recovered > 0 ? `Награда восстановлена: +${recovered} XP.` : "Ежедневная награда уже получена сегодня.";
+  }
 
   const amounts = [10, 15, 20, 25, 30, 50, 100];
   const amount = amounts[streak - 1] ?? 10;
