@@ -655,7 +655,7 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
 
   if (command === "/start" || command === "/help") {
     await sendTelegramMessage(env, m.chat.id,
-      "НК Activity — система активности сообщества.\n/profile — профиль и XP.\n/achievements — твои достижения.\n/daily — ежедневная награда.\n/shop — магазин.\n/buy ID — купить товар.\n/myorders — мои покупки.\n/pending — заявки на проверку (админ).\n/adminstats — статистика (админ).\n/penalty ID сумма | причина — предложить штраф (админ).\n/pendingpenalties — очередь штрафов (админ).\n/approvepenalty ID или /rejectpenalty ID (админ).\n/addreward категория | название | цена | описание | количество (админ).\n/approve ID или /reject ID (админ).\n/top — общий топ-10.\n/topseason — рейтинг текущего сезона.\n/myrank — твоё место в рейтингах.");
+      "НК Activity — система активности сообщества.\n/profile — профиль и XP.\n/achievements — твои достижения.\n/daily — ежедневная награда.\n/shop — магазин.\n/buy ID — купить товар.\n/myorders — мои покупки.\n/pending — заявки на проверку (админ).\n/adminstats — статистика (админ).\n/penalty ID сумма | причина — предложить штраф (админ).\n/pendingpenalties — очередь штрафов (админ).\n/approvepenalty ID или /rejectpenalty ID (админ).\n/addreward категория | название | цена | описание | количество (админ).\n/approve ID или /reject ID (админ).\n/top — общий топ-10.\n/topseason — рейтинг текущего сезона.\n/myrank — твоё место в рейтингах.\n/adminpanel — открыть веб-панель (админ).");
     return;
   }
   if (command === "/daily") {
