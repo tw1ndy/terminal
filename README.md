@@ -40,3 +40,22 @@
 - Протестировать повторные Updates, дневной лимит и начисления.
 - Не подключать основную группу до прохождения критических тестов.
 - Старый проект `telegram-admin-bot` не используется и не изменяется.
+
+
+## Подключение Cloudflare (перед первым запуском)
+
+1. Создать отдельную D1-базу с именем `nk-activity-db` в Cloudflare.
+2. Скопировать её Database ID и заменить `REPLACE_WITH_NEW_D1_DATABASE_ID` в `wrangler.toml`.
+3. Создать отдельный Worker `nk-activity` и подключить этот репозиторий через Workers Builds либо выполнить деплой Wrangler из локальной копии.
+4. В настройках Worker добавить Secrets:
+   - `TELEGRAM_BOT_TOKEN` — новый токен @AKTIVInkBot (не коммитить и не отправлять в чат).
+   - `TELEGRAM_WEBHOOK_SECRET` — случайная длинная строка для проверки Telegram webhook.
+   - `OWNER_TELEGRAM_ID` — `891419692`.
+5. Обычные переменные Worker: `TARGET_CHAT_ID=-1004353159956`, `APP_TIMEZONE=Europe/Moscow`, `APP_ENV=production`.
+6. Применить миграции к удалённой D1: `npx wrangler d1 migrations apply nk-activity-db --remote`.
+7. После успешного деплоя установить webhook Telegram на URL `https://nk-activity.<твой-subdomain>.workers.dev/webhook`, передав тот же `TELEGRAM_WEBHOOK_SECRET` как `secret_token`.
+8. Проверить `/health`, затем отправить `/start`, `/profile` и `/top` в тестовой группе.
+
+**Не подключать основную группу до проверки начисления XP, дневного лимита и повторной доставки webhook.** Токены и секреты не добавлять в GitHub.
+
+Текущие ограничения первой версии: Web-панель пока статическая; магазин, сезоны, достижения, ежедневные бонусы, модераторские действия и антифрод ещё не реализованы. Бот начисляет базовые XP за сообщения и отвечает на базовые команды.
