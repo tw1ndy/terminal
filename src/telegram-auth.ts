@@ -27,7 +27,7 @@ export async function verifyTelegramWebApp(
 
     const receivedHash = params.get("hash");
     const authDateValue = params.get("auth_date");
-    const authDate = authDateValue && /^\\d+$/.test(authDateValue) ? Number(authDateValue) : NaN;
+    const authDate = authDateValue && /^\d+$/.test(authDateValue) ? Number(authDateValue) : NaN;
     const userJson = params.get("user");
     if (!receivedHash || !/^[a-f0-9]{64}$/i.test(receivedHash) || !userJson ||
       !Number.isSafeInteger(authDate) || authDate <= 0) return null;
@@ -37,7 +37,7 @@ export async function verifyTelegramWebApp(
       .filter(([key]) => key !== "hash")
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([key, value]) => `${key}=${value}`)
-      .join("\\n");
+      .join("\n");
 
     const encoder = new TextEncoder();
     const webAppKey = await crypto.subtle.importKey(
