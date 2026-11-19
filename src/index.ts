@@ -6,6 +6,32 @@ const app = new Hono<{ Bindings: Env }>();
 const DEFAULT_MESSAGE_XP = 3;
 const DEFAULT_DAILY_CAP = 200;
 
+function levelTitle(level: number): string {
+  if (level <= 5) return "Новичок";
+  if (level <= 10) return "Активист";
+  if (level <= 20) return "Постоянный";
+  if (level <= 35) return "Ветеран";
+  if (level <= 50) return "Легенда НК";
+  return "Элитный участник";
+}
+
+function validateLevelThresholds(value: unknown): Record<string, number> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length === 0) return {};
+  if (entries.length > 100) return null;
+  const parsed = entries.map(([key, xp]) => [Number(key), xp] as const)
+    .sort((a, b) => a[0] - b[0]);
+  if (parsed.some(([level, xp], index) =>
+    !Number.isSafeInteger(level) || level !== index + 1 ||
+    !Number.isSafeInteger(xp) || Number(xp) < 0 || Number(xp) > 1_000_000_000)) return null;
+  if (parsed[0][1] !== 0) return null;
+  for (let i = 1; i < parsed.length; i++) {
+    if (Number(parsed[i][1]) <= Number(parsed[i - 1][1])) return null;
+  }
+  return Object.fromEntries(parsed.map(([level, xp]) => [String(level), Number(xp)]));
+}
+
 function moscowDay(unixSeconds: number): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Europe/Moscow", year: "numeric", month: "2-digit", day: "2-digit"
@@ -892,8 +918,18 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
       return;
     }
     const displayName = row.first_name || (row.username ? `@${row.username}` : "Участник");
+    const thresholds = validateLevelThresholds(await getSetting<unknown>(env, "level_thresholds", {})) ?? {};
+    const configuredLevels = Object.entries(thresholds).map(([level, xp]) => ({ level: Number(level), xp }))
+      .sort((a, b) => a.level - b.level);
+    const currentLevel = configuredLevels.filter(item => item.xp <= row.lifetime_xp).at(-1);
+    const nextLevel = currentLevel
+      ? configuredLevels.find(item => item.level === currentLevel.level + 1)
+      : configuredLevels[0];
+    const levelLine = currentLevel
+      ? `Уровень: ${currentLevel.level} · ${levelTitle(currentLevel.level)}${nextLevel ? `\nДо уровня ${nextLevel.level}: ${Math.max(0, nextLevel.xp - row.lifetime_xp)} XP` : "\nМаксимальный настроенный уровень"}`
+      : "Уровень: ещё не настроен администратором";
     await sendTelegramMessage(env, m.chat.id,
-      `Профиль: ${displayName}\nПрефикс: ${row.prefix_title ?? "нет"}\nLifetime XP: ${row.lifetime_xp}\nДоступно: ${row.available_xp} XP\nСезон: ${row.season_xp} XP\nСообщений: ${row.message_count}\nСерия активности: ${row.current_streak} дн. (рекорд: ${row.longest_streak})\nДостижения: ${row.achievements}`);
+      `Профиль: ${displayName}\n${levelLine}\nПрефикс: ${row.prefix_title ?? "нет"}\nLifetime XP: ${row.lifetime_xp}\nДоступно: ${row.available_xp} XP\nСезон: ${row.season_xp} XP\nСообщений: ${row.message_count}\nСерия активности: ${row.current_streak} дн. (рекорд: ${row.longest_streak})\nДостижения: ${row.achievements}`);
     return;
   }
   if (command === "/myrank") {
@@ -1033,7 +1069,8 @@ app.get("/api/admin/dashboard", async c => {
     settings: {
       messageXp: await getSetting(c.env, "message_xp", DEFAULT_MESSAGE_XP),
       dailyXpCap: await getSetting(c.env, "daily_xp_cap", DEFAULT_DAILY_CAP),
-      seasonDays: await getSetting(c.env, "season_days", 30)
+      seasonDays: await getSetting(c.env, "season_days", 30),
+      levelThresholds: await getSetting(c.env, "level_thresholds", {})
     },
     permissions: {
       shopReview: await hasPermission(c.env, actorId, "shop.review"),
@@ -1047,12 +1084,13 @@ app.get("/api/admin/dashboard", async c => {
 app.post("/api/admin/settings", async c => {
   const actorId = await authorizeWebAdmin(c, "settings.manage");
   if (!actorId) return c.json({ error: "unauthorized" }, 401);
-  let body: { messageXp?: number; dailyXpCap?: number; seasonDays?: number };
+  let body: { messageXp?: number; dailyXpCap?: number; seasonDays?: number; levelThresholds?: unknown };
   try { body = await c.req.json(); } catch { return c.json({ error: "invalid_json" }, 400); }
   const messageXp = Number(body.messageXp);
   const dailyXpCap = Number(body.dailyXpCap);
   const seasonDays = Number(body.seasonDays);
-  if (!Number.isSafeInteger(messageXp) || messageXp < 1 || messageXp > 20 ||
+  const levelThresholds = validateLevelThresholds(body.levelThresholds);
+  if (!levelThresholds || !Number.isSafeInteger(messageXp) || messageXp < 1 || messageXp > 20 ||
       !Number.isSafeInteger(dailyXpCap) || dailyXpCap < 50 || dailyXpCap > 5000 ||
       !Number.isSafeInteger(seasonDays) || seasonDays < 7 || seasonDays > 90) {
     return c.json({ error: "invalid_settings" }, 400);
@@ -1070,9 +1108,14 @@ app.post("/api/admin/settings", async c => {
     c.env.DB.prepare(`INSERT INTO settings (key, value_json, updated_at, updated_by)
       VALUES ('season_days', ?, ?, ?) ON CONFLICT(key) DO UPDATE SET
       value_json = excluded.value_json, updated_at = excluded.updated_at, updated_by = excluded.updated_by`)
-      .bind(JSON.stringify(seasonDays), now, actorId)
+      .bind(JSON.stringify(seasonDays), now, actorId),
+    c.env.DB.prepare(`INSERT INTO settings (key, value_json, updated_at, updated_by)
+      VALUES ('level_thresholds', ?, ?, ?) ON CONFLICT(key) DO UPDATE SET
+      value_json = excluded.value_json, updated_at = excluded.updated_at, updated_by = excluded.updated_by`)
+      .bind(JSON.stringify(levelThresholds), now, actorId)
   ]);
-  await logAdminAction(c.env, actorId, "settings_updated", null, { messageXp, dailyXpCap, seasonDays }, now);
+  await logAdminAction(c.env, actorId, "settings_updated", null,
+    { messageXp, dailyXpCap, seasonDays, configuredLevels: Object.keys(levelThresholds).length }, now);
   return c.json({ ok: true });
 });
 
