@@ -85,3 +85,14 @@
 ### Season prizes
 
 The owner can configure `season_reward_schedule` in the admin panel as a JSON object mapping final places 1–10 to XP amounts, for example `{ "1": 500, "2": 300, "3": 150 }`. An empty object disables season payouts. After a season closes, configured prizes are credited to Lifetime XP and Available XP exactly once; they do not increase the next season's XP. Migration `0011_season_reward_runs.sql` adds an idempotency marker. Configure the schedule before the season closes; a season processed while payouts are disabled is not paid retroactively.
+
+
+### Telegram webhook setup
+
+After deploying the Worker and adding `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET` as Cloudflare secrets, set the webhook from a trusted local terminal without placing credentials in source control:
+
+```bash
+TELEGRAM_BOT_TOKEN='…' TELEGRAM_WEBHOOK_SECRET='…' WORKER_URL='https://<worker-domain>/webhook' npm run webhook:set
+```
+
+The helper preserves pending Telegram updates, only subscribes to message updates, validates HTTPS and the webhook secret format, and never prints the bot token or secret. Do not run it until the Worker is deployed and its D1 migrations are applied.
