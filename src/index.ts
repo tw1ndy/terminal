@@ -21,6 +21,48 @@ async function getSetting<T>(env: Env, key: string, fallback: T): Promise<T> {
   try { return JSON.parse(row.value_json) as T; } catch { return fallback; }
 }
 
+function moscowStartOfDay(day: string): number {
+  const [year, month, date] = day.split("-").map(Number);
+  return Math.floor(Date.UTC(year, month - 1, date) / 1000) - 3 * 60 * 60;
+}
+
+async function awardWeeklyRankingRewards(env: Env, now: number): Promise<void> {
+  const today = moscowDay(now);
+  const [year, month, date] = today.split("-").map(Number);
+  const weekday = new Date(Date.UTC(year, month - 1, date)).getUTCDay();
+  if (weekday !== 1) return;
+  const periodEnd = moscowStartOfDay(today);
+  let periodStartDay = today;
+  for (let i = 0; i < 7; i++) periodStartDay = previousDay(periodStartDay);
+  const periodStart = moscowStartOfDay(periodStartDay);
+  const rewards = [300, 200, 150, 75, 75, 30, 30, 30, 30, 30];
+  const leaders = await env.DB.prepare(`SELECT telegram_id, SUM(amount) AS xp
+    FROM xp_transactions
+    WHERE amount > 0 AND transaction_type NOT IN ('purchase_refund', 'weekly_reward')
+      AND created_at >= ? AND created_at < ?
+    GROUP BY telegram_id ORDER BY xp DESC, telegram_id ASC LIMIT 10`)
+    .bind(periodStart, periodEnd).all<{ telegram_id: string; xp: number }>();
+  for (const [index, leader] of (leaders.results ?? []).entries()) {
+    const amount = rewards[index] ?? 0;
+    if (!amount) continue;
+    const sourceId = `week:${periodStartDay}`;
+    await env.DB.batch([
+      env.DB.prepare(`INSERT OR IGNORE INTO xp_transactions
+        (telegram_id, amount, transaction_type, source_id, note, created_at, created_by)
+        VALUES (?, ?, 'weekly_reward', ?, ?, ?, 'system')`)
+        .bind(leader.telegram_id, amount, sourceId, `Недельная награда · место ${index + 1}`, now),
+      env.DB.prepare(`UPDATE xp_wallets SET lifetime_xp = lifetime_xp + ?,
+        available_xp = available_xp + ?, season_xp = season_xp + ?
+        WHERE telegram_id = ? AND changes() = 1`)
+        .bind(amount, amount, amount, leader.telegram_id),
+      env.DB.prepare(`INSERT INTO season_stats (season_id, telegram_id, season_xp)
+        SELECT id, ?, ? FROM seasons WHERE status = 'active' AND changes() = 1
+        ON CONFLICT(season_id, telegram_id) DO UPDATE SET season_xp = season_xp + excluded.season_xp`)
+        .bind(leader.telegram_id, amount)
+    ]);
+  }
+}
+
 async function ensureActiveSeason(env: Env, now: number): Promise<void> {
   const active = await env.DB.prepare("SELECT id, ends_at FROM seasons WHERE status = 'active' ORDER BY id DESC LIMIT 1")
     .first<{ id: number; ends_at: number }>();
@@ -944,6 +986,7 @@ export default {
   async scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext) {
     const now = Math.floor(Date.now() / 1000);
     await ensureActiveSeason(env, now);
+    await awardWeeklyRankingRewards(env, now);
     await env.DB.prepare("DELETE FROM processed_updates WHERE processed_at < ?")
       .bind(now - 14 * 24 * 60 * 60).run();
   }
