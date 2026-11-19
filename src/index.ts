@@ -161,7 +161,7 @@ async function handleShopCommand(env: Env, update: TelegramUpdate, command: stri
     const lines = (result.results ?? []).map(item =>
       `#${item.id} · ${item.title} — ${item.price_xp} XP [${item.category}]${item.quantity === null ? "" : ` · осталось: ${item.quantity}`}`);
     await sendTelegramMessage(env, m.chat.id, lines.length
-      ? `Магазин НК\\n${lines.join("\\n")}\\nПокупка: /buy ID`
+      ? `Магазин НК\n${lines.join("\n")}\nПокупка: /buy ID`
       : "Магазин пока пуст.");
     return true;
   }
@@ -203,7 +203,7 @@ async function handleShopCommand(env: Env, update: TelegramUpdate, command: stri
     const buyer = purchase?.username ? `@${purchase.username}` : (purchase?.first_name ?? telegramId);
     for (const admin of admins.results ?? []) {
       await sendTelegramMessage(env, Number(admin.telegram_id),
-        `Новая покупка #${purchaseId}: ${purchase?.title ?? "товар"} за ${purchase?.price_xp ?? "—"} XP. Участник: ${buyer}.\\nОдобрить: /approve ${purchaseId}\\nОтклонить: /reject ${purchaseId}`);
+        `Новая покупка #${purchaseId}: ${purchase?.title ?? "товар"} за ${purchase?.price_xp ?? "—"} XP. Участник: ${buyer}.\nОдобрить: /approve ${purchaseId}\nОтклонить: /reject ${purchaseId}`);
     }
     return true;
   }
@@ -215,7 +215,7 @@ async function handleShopCommand(env: Env, update: TelegramUpdate, command: stri
         id: number; title: string; price_xp: number; status: string; created_at: number;
       }>();
     const lines = (result.results ?? []).map(p => `#${p.id} · ${p.title} — ${p.price_xp} XP · ${p.status}`);
-    await sendTelegramMessage(env, m.chat.id, lines.length ? `Твои заявки:\\n${lines.join("\\n")}` : "У тебя пока нет покупок.");
+    await sendTelegramMessage(env, m.chat.id, lines.length ? `Твои заявки:\n${lines.join("\n")}` : "У тебя пока нет покупок.");
     return true;
   }
 
@@ -261,7 +261,7 @@ async function handleShopCommand(env: Env, update: TelegramUpdate, command: stri
     const lines = (result.results ?? []).map(p =>
       `#${p.id} · ID ${p.telegram_id} · ${p.suggested_amount} XP · ${p.reason}`);
     await sendTelegramMessage(env, m.chat.id,
-      lines.length ? `Штрафы на подтверждение:\\n${lines.join("\\n")}\\n/approvepenalty ID или /rejectpenalty ID` : "Нет штрафов на подтверждение.");
+      lines.length ? `Штрафы на подтверждение:\n${lines.join("\n")}\n/approvepenalty ID или /rejectpenalty ID` : "Нет штрафов на подтверждение.");
     return true;
   }
 
@@ -329,7 +329,7 @@ async function handleShopCommand(env: Env, update: TelegramUpdate, command: stri
     ]);
     const seasonEnd = season ? new Date(season.ends_at * 1000).toLocaleDateString("ru-RU", { timeZone: "Europe/Moscow" }) : "не создан";
     await sendTelegramMessage(env, m.chat.id,
-      `Статистика НК Activity\\nУчастников: ${users?.total ?? 0}\\nСообщений сегодня: ${messages?.total ?? 0}\\nLifetime XP в системе: ${xp?.total ?? 0}\\nОжидают покупки: ${pending?.total ?? 0}\\nСезон: ${season?.title ?? "—"} (до ${seasonEnd})`);
+      `Статистика НК Activity\nУчастников: ${users?.total ?? 0}\nСообщений сегодня: ${messages?.total ?? 0}\nLifetime XP в системе: ${xp?.total ?? 0}\nОжидают покупки: ${pending?.total ?? 0}\nСезон: ${season?.title ?? "—"} (до ${seasonEnd})`);
     return true;
   }
 
@@ -347,7 +347,7 @@ async function handleShopCommand(env: Env, update: TelegramUpdate, command: stri
     const lines = (result.results ?? []).map(p =>
       `#${p.id} · ${p.title} · ${p.price_xp} XP · ${p.username ? `@${p.username}` : p.first_name}`);
     await sendTelegramMessage(env, m.chat.id,
-      lines.length ? `Ожидают решения:\\n${lines.join("\\n")}\\n/approve ID или /reject ID` : "Нет ожидающих заявок.");
+      lines.length ? `Ожидают решения:\n${lines.join("\n")}\n/approve ID или /reject ID` : "Нет ожидающих заявок.");
     return true;
   }
 
@@ -554,7 +554,7 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
       }>();
     const lines = (result.results ?? []).map((row, i) => `${i + 1}. ${row.title} — ${row.description}`);
     await sendTelegramMessage(env, m.chat.id,
-      lines.length ? `Твои достижения:\\n${lines.join("\\n")}` : "Пока нет достижений. Продолжай общаться в группе.");
+      lines.length ? `Твои достижения:\n${lines.join("\n")}` : "Пока нет достижений. Продолжай общаться в группе.");
     return;
   }
   if (command === "/profile" || command === "/me") {
