@@ -102,10 +102,39 @@ async function awardWeeklyRankingRewards(env: Env, now: number): Promise<void> {
   }
 }
 
+function validateSeasonRewardSchedule(value: unknown): Record<string, number> | null {
+  if (value === undefined || value === null) return {};
+  if (typeof value !== 'object' || Array.isArray(value)) return null;
+  const out: Record<string, number> = {};
+  for (const [place, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (!/^(?:[1-9]|10)$/.test(place)) return null;
+    const amount = Number(raw);
+    if (!Number.isSafeInteger(amount) || amount < 0 || amount > 1000000) return null;
+    if (amount > 0) out[place] = amount;
+  }
+  return out;
+}
+
+async function awardClosedSeasonRewards(env: Env, now: number): Promise<void> {
+  const schedule = await getSetting<Record<string, number>>(env, 'season_reward_schedule', {});
+  const closed = await env.DB.prepare("SELECT id FROM seasons WHERE status = 'closed' AND id NOT IN (SELECT season_id FROM season_reward_runs) ORDER BY id ASC").all<{id:number}>();
+  for (const season of closed.results ?? []) {
+    const results = await env.DB.prepare('SELECT telegram_id, place FROM season_results WHERE season_id = ? ORDER BY place ASC LIMIT 10').bind(season.id).all<{telegram_id:string;place:number}>();
+    for (const result of results.results ?? []) {
+      const amount = Number(schedule[String(result.place)] ?? 0);
+      if (!Number.isSafeInteger(amount) || amount <= 0 || amount > 1000000) continue;
+      await env.DB.batch([
+        env.DB.prepare("INSERT OR IGNORE INTO xp_transactions (telegram_id, amount, transaction_type, source_id, note, created_at, created_by) VALUES (?, ?, 'season_reward', ?, ?, ?, 'system')").bind(result.telegram_id, amount, 'season:' + season.id + ':place:' + result.place, 'Награда за сезон №' + season.id + ' · место ' + result.place, now),
+        env.DB.prepare('UPDATE xp_wallets SET lifetime_xp = lifetime_xp + ?, available_xp = available_xp + ? WHERE telegram_id = ? AND changes() = 1').bind(amount, amount, result.telegram_id)
+      ]);
+    }
+    await env.DB.prepare('INSERT OR IGNORE INTO season_reward_runs (season_id, completed_at) VALUES (?, ?)').bind(season.id, now).run();
+  }
+}
 async function ensureActiveSeason(env: Env, now: number): Promise<void> {
   const active = await env.DB.prepare("SELECT id, ends_at FROM seasons WHERE status = 'active' ORDER BY id DESC LIMIT 1")
     .first<{ id: number; ends_at: number }>();
-  if (active && active.ends_at > now) return;
+  if (active && active.ends_at > now) { await awardClosedSeasonRewards(env, now); return; }
 
   const seasonDays = await getSetting(env, "season_days", 30);
   const duration = Math.max(1, Math.min(90, Number(seasonDays) || 30)) * 86400;
@@ -130,6 +159,7 @@ async function ensureActiveSeason(env: Env, now: number): Promise<void> {
     `).bind(now, now + duration),
     env.DB.prepare("UPDATE xp_wallets SET season_xp = 0 WHERE changes() = 1")
   ]);
+  await awardClosedSeasonRewards(env, now);
 }
 
 /** Grants XP once per source and applies the shared daily cap atomically in SQL. */
@@ -1040,7 +1070,8 @@ app.get("/api/admin/dashboard", async c => {
       messageXp: await getSetting(c.env, "message_xp", DEFAULT_MESSAGE_XP),
       dailyXpCap: await getSetting(c.env, "daily_xp_cap", DEFAULT_DAILY_CAP),
       seasonDays: await getSetting(c.env, "season_days", 30),
-      levelThresholds: await getSetting(c.env, "level_thresholds", {})
+      levelThresholds: await getSetting(c.env, "level_thresholds", {}),
+      seasonRewardSchedule: await getSetting(c.env, "season_reward_schedule", {})
     },
     permissions: {
       shopReview: await hasPermission(c.env, actorId, "shop.review"),
@@ -1079,13 +1110,14 @@ app.get("/api/admin/members", async c => {
 app.post("/api/admin/settings", async c => {
   const actorId = await authorizeWebAdmin(c, "settings.manage");
   if (!actorId) return c.json({ error: "unauthorized" }, 401);
-  let body: { messageXp?: number; dailyXpCap?: number; seasonDays?: number; levelThresholds?: unknown };
+  let body: { messageXp?: number; dailyXpCap?: number; seasonDays?: number; levelThresholds?: unknown; seasonRewardSchedule?: unknown };
   try { body = await c.req.json(); } catch { return c.json({ error: "invalid_json" }, 400); }
   const messageXp = Number(body.messageXp);
   const dailyXpCap = Number(body.dailyXpCap);
   const seasonDays = Number(body.seasonDays);
   const levelThresholds = validateLevelThresholds(body.levelThresholds);
-  if (!levelThresholds || !Number.isSafeInteger(messageXp) || messageXp < 1 || messageXp > 20 ||
+  const seasonRewardSchedule = validateSeasonRewardSchedule(body.seasonRewardSchedule);
+  if (!levelThresholds || !seasonRewardSchedule || !Number.isSafeInteger(messageXp) || messageXp < 1 || messageXp > 20 ||
       !Number.isSafeInteger(dailyXpCap) || dailyXpCap < 50 || dailyXpCap > 5000 ||
       !Number.isSafeInteger(seasonDays) || seasonDays < 7 || seasonDays > 90) {
     return c.json({ error: "invalid_settings" }, 400);
@@ -1107,10 +1139,11 @@ app.post("/api/admin/settings", async c => {
     c.env.DB.prepare(`INSERT INTO settings (key, value_json, updated_at, updated_by)
       VALUES ('level_thresholds', ?, ?, ?) ON CONFLICT(key) DO UPDATE SET
       value_json = excluded.value_json, updated_at = excluded.updated_at, updated_by = excluded.updated_by`)
-      .bind(JSON.stringify(levelThresholds), now, actorId)
+      .bind(JSON.stringify(levelThresholds), now, actorId),
+    c.env.DB.prepare("INSERT INTO settings (key, value_json, updated_at, updated_by) VALUES ('season_reward_schedule', ?, ?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at, updated_by = excluded.updated_by").bind(JSON.stringify(seasonRewardSchedule), now, actorId)
   ]);
   await logAdminAction(c.env, actorId, "settings_updated", null,
-    { messageXp, dailyXpCap, seasonDays, configuredLevels: Object.keys(levelThresholds).length }, now);
+    { messageXp, dailyXpCap, seasonDays, configuredLevels: Object.keys(levelThresholds).length, seasonRewardPlaces: Object.keys(seasonRewardSchedule).length }, now);
   return c.json({ ok: true });
 });
 
