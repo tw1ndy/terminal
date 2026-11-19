@@ -989,7 +989,7 @@ app.post("/api/admin/penalties/:id/:action", async c => {
   return c.json({ ok: true });
 });
 
-app.get("/", c => c.json({ service: "nk-activity", status: "ok", version: "0.3.0" }));
+app.get("/", c => c.json({ service: "nk-activity", status: "ok", version: "0.4.0" }));
 app.get("/health", async c => {
   try {
     await c.env.DB.prepare("SELECT 1").first();
