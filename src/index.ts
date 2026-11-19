@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { Env, TelegramUpdate } from "./types";
+import { dailyMessageMilestone, dailyRewardAmount, nextDailyClaimStreak, previousDay } from "./rewards";
 
 const app = new Hono<{ Bindings: Env }>();
 const DEFAULT_MESSAGE_XP = 3;
@@ -11,12 +12,6 @@ function moscowDay(unixSeconds: number): string {
   }).formatToParts(new Date(unixSeconds * 1000));
   const get = (type: string) => parts.find(p => p.type === type)?.value ?? "";
   return `${get("year")}-${get("month")}-${get("day")}`;
-}
-
-function previousDay(day: string): string {
-  const [year, month, date] = day.split("-").map(Number);
-  const d = new Date(Date.UTC(year, month - 1, date - 1));
-  return d.toISOString().slice(0, 10);
 }
 
 async function getSetting<T>(env: Env, key: string, fallback: T): Promise<T> {
@@ -170,8 +165,9 @@ async function recordGroupMessage(env: Env, update: TelegramUpdate): Promise<voi
     "SELECT COUNT(*) AS count FROM message_events WHERE telegram_id = ? AND event_day = ?"
   ).bind(telegramId, day).first<{ count: number }>();
   const dailyCount = dailyCountRow?.count ?? 0;
-  if (dailyCount === 50) await awardDailyXp(env, telegramId, day, "message_milestone", `50:${day}`, 20, "50 сообщений за день", m.date);
-  if (dailyCount === 100) await awardDailyXp(env, telegramId, day, "message_milestone", `100:${day}`, 35, "100 сообщений за день", m.date);
+  const milestone = dailyMessageMilestone(dailyCount);
+  if (milestone) await awardDailyXp(env, telegramId, day, "message_milestone",
+    `${milestone.sourceKey}:${day}`, milestone.amount, milestone.note, m.date);
   if (streak === 7) await awardDailyXp(env, telegramId, day, "streak_milestone", `7:${day}`, 50, "Серия 7 дней", m.date);
   if (streak === 30) await awardDailyXp(env, telegramId, day, "streak_milestone", `30:${day}`, 200, "Серия 30 дней", m.date);
 
@@ -204,17 +200,8 @@ async function claimDailyReward(env: Env, telegramId: string, now: number): Prom
     return recovered > 0 ? `Награда восстановлена: +${recovered} XP.` : "Ежедневная награда уже получена сегодня.";
   }
 
-  const yesterday = previousDay(day);
-  let consecutive = 0;
-  let expected = yesterday;
-  for (const claimDay of claimDays) {
-    if (claimDay !== expected) break;
-    consecutive += 1;
-    expected = previousDay(expected);
-  }
-  const streak = Math.min(consecutive + 1, 7);
-  const amounts = [10, 15, 20, 25, 30, 50, 100];
-  const amount = amounts[streak - 1] ?? 10;
+  const streak = nextDailyClaimStreak(day, claimDays);
+  const amount = dailyRewardAmount(streak);
   const inserted = await env.DB.prepare(`INSERT OR IGNORE INTO daily_rewards
     (telegram_id, reward_day, reward_type, xp_amount, created_at)
     VALUES (?, ?, 'daily_claim', ?, ?)`).bind(telegramId, day, amount, now).run();
