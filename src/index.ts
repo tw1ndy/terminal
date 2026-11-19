@@ -245,6 +245,17 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
     await sendTelegramMessage(env, m.chat.id, await claimDailyReward(env, telegramId, m.date));
     return;
   }
+  if (command === "/achievements") {
+    const result = await env.DB.prepare(`SELECT a.title, a.description, ua.earned_at
+      FROM user_achievements ua JOIN achievements a ON a.id = ua.achievement_id
+      WHERE ua.telegram_id = ? ORDER BY ua.earned_at ASC`).bind(telegramId).all<{
+        title: string; description: string; earned_at: number;
+      }>();
+    const lines = (result.results ?? []).map((row, i) => `${i + 1}. ${row.title} — ${row.description}`);
+    await sendTelegramMessage(env, m.chat.id,
+      lines.length ? `Твои достижения:\\n${lines.join("\\n")}` : "Пока нет достижений. Продолжай общаться в группе.");
+    return;
+  }
   if (command === "/profile" || command === "/me") {
     const row = await env.DB.prepare(`SELECT u.first_name, u.username, s.message_count,
       s.current_streak, s.longest_streak, w.lifetime_xp, w.available_xp, w.season_xp,
