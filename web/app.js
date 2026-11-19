@@ -19,7 +19,7 @@
       headers: { "Authorization": "tma " + initData, ...(options.headers || {}) }
     });
     const body = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(body.error === "unauthorized" ? "Нет доступа. Открой панель из Telegram-бота с правами администратора." : body.error || "Ошибка запроса");
+    if (!response.ok) throw new Error(body.error === "unauthorized" ? "Нет доступа. Открой панель из Telegram-бота с правами администратора." : (body.error === "insufficient_xp" ? "У участника недостаточно доступных XP." : body.error === "not_pending" ? "Заявка уже обработана или не найдена." : body.error || "Ошибка запроса"));
     return body;
   }
   function node(tag, className, text) {
