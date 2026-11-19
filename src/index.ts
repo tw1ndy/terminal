@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { Env, TelegramUpdate } from "./types";
+import { verifyTelegramWebApp } from "./telegram-auth";
 import { dailyMessageMilestones, dailyRewardAmount, monthlyRewardTypes, nextDailyClaimStreak, previousDay, validateSeasonRewardSchedule } from "./rewards";
 import { getLevelProgress, validateLevelThresholds } from "./levels";
 
@@ -273,46 +274,6 @@ async function logAdminAction(
   await env.DB.prepare(`INSERT INTO admin_logs (actor_id, action, target_id, details_json, created_at)
     VALUES (?, ?, ?, ?, ?)`)
     .bind(actorId, action, targetId, JSON.stringify(details), createdAt).run();
-}
-
-async function verifyTelegramWebApp(env: Env, initData: string): Promise<{ id: string; first_name: string; username?: string } | null> {
-  if (!env.TELEGRAM_BOT_TOKEN || !initData || initData.length > 8192) return null;
-  try {
-    const params = new URLSearchParams(initData);
-    const receivedHash = params.get("hash");
-    const authDate = Number(params.get("auth_date"));
-    const userJson = params.get("user");
-    if (!receivedHash || !/^[a-f0-9]{64}$/i.test(receivedHash) || !userJson ||
-      !Number.isSafeInteger(authDate)) return null;
-    const now = Math.floor(Date.now() / 1000);
-    if (authDate > now + 60 || now - authDate > 86400) return null;
-
-    const dataCheckString = [...params.entries()]
-      .filter(([key]) => key !== "hash" && key !== "signature")
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([key, value]) => `${key}=${value}`)
-      .join("\n");
-    const encoder = new TextEncoder();
-    const webAppKey = await crypto.subtle.importKey(
-      "raw", encoder.encode("WebAppData"), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
-    );
-    const secret = await crypto.subtle.sign("HMAC", webAppKey, encoder.encode(env.TELEGRAM_BOT_TOKEN));
-    const signingKey = await crypto.subtle.importKey(
-      "raw", secret, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
-    );
-    const digest = await crypto.subtle.sign("HMAC", signingKey, encoder.encode(dataCheckString));
-    const calculatedHash = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
-    let mismatch = calculatedHash.length ^ receivedHash.length;
-    for (let i = 0; i < Math.min(calculatedHash.length, receivedHash.length); i++) {
-      mismatch |= calculatedHash.charCodeAt(i) ^ receivedHash.charCodeAt(i);
-    }
-    if (mismatch !== 0) return null;
-    const user = JSON.parse(userJson) as { id?: number; first_name?: string; username?: string };
-    if (!Number.isSafeInteger(user.id) || !user.id) return null;
-    return { id: String(user.id), first_name: user.first_name ?? "", username: user.username };
-  } catch {
-    return null;
-  }
 }
 
 async function authorizeWebAdmin(
