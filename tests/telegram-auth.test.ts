@@ -8,7 +8,7 @@ async function signInitData(data: string, token: string): Promise<string> {
   const params = new URLSearchParams(data);
   params.delete("hash");
   const entries = [...params.entries()].sort(([a], [b]) => a.localeCompare(b));
-  const checkString = entries.map(([key, value]) => `${key}=${value}`).join("\\n");
+  const checkString = entries.map(([key, value]) => `${key}=${value}`).join("\n");
   const encoder = new TextEncoder();
   const firstKey = await crypto.subtle.importKey(
     "raw", encoder.encode("WebAppData"), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
