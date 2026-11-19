@@ -1,0 +1,20 @@
+export interface Env {
+  DB: D1Database;
+  TELEGRAM_BOT_TOKEN?: string;
+  TELEGRAM_WEBHOOK_SECRET?: string;
+  OWNER_TELEGRAM_ID?: string;
+  WEB_ADMIN_SECRET?: string;
+  APP_TIMEZONE: string;
+  APP_ENV: string;
+}
+
+export interface TelegramUpdate {
+  update_id: number;
+  message?: {
+    message_id: number;
+    date: number;
+    chat: { id: number; type: string };
+    from?: { id: number; is_bot?: boolean; first_name?: string; username?: string };
+    text?: string;
+  };
+}

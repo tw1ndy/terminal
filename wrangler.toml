@@ -1,0 +1,16 @@
+name = "nk-activity"
+main = "src/index.ts"
+compatibility_date = "2026-11-19"
+
+[vars]
+APP_TIMEZONE = "Europe/Moscow"
+APP_ENV = "development"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "nk-activity-db"
+database_id = "REPLACE_WITH_NEW_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+[triggers]
+crons = ["5 0 * * *", "*/15 * * * *"]

@@ -1,0 +1,23 @@
+{
+  "name": "nk-activity",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "db:local": "wrangler d1 migrations apply NK_ACTIVITY_DB --local",
+    "db:remote": "wrangler d1 migrations apply NK_ACTIVITY_DB --remote",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "hono": "^4.6.12"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8",
+    "wrangler": "^3.91.0"
+  }
+}
