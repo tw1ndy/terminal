@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dailyMessageMilestones, dailyRewardAmount, nextDailyClaimStreak, previousDay, validateSeasonRewardSchedule } from "../src/rewards";
+import { dailyMessageMilestones, dailyRewardAmount, monthlyRewardTypes, nextDailyClaimStreak, previousDay, validateSeasonRewardSchedule } from "../src/rewards";
 
 describe("daily reward calendar", () => {
   it("handles month and year boundaries", () => {
@@ -55,5 +55,22 @@ describe("season reward schedule validation", () => {
     expect(validateSeasonRewardSchedule({ "1": 1.5 })).toBeNull();
     expect(validateSeasonRewardSchedule({ "1": -1 })).toBeNull();
     expect(validateSeasonRewardSchedule({ "1": 1000001 })).toBeNull();
+  });
+});
+
+
+describe("monthly ranking reward policy", () => {
+  it("gives the winner a prefix and achievement", () => {
+    expect(monthlyRewardTypes(1)).toEqual(["prefix", "achievement"]);
+  });
+  it("gives second place a prefix", () => {
+    expect(monthlyRewardTypes(2)).toEqual(["prefix"]);
+  });
+  it("gives third place a commemorative achievement", () => {
+    expect(monthlyRewardTypes(3)).toEqual(["achievement"]);
+  });
+  it("does not award beyond third place", () => {
+    expect(monthlyRewardTypes(4)).toEqual([]);
+    expect(monthlyRewardTypes(0)).toEqual([]);
   });
 });
