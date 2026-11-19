@@ -14,3 +14,4 @@ jobs:
           node-version: 20
       - run: npm install --no-audit --no-fund
       - run: npm run typecheck
+      - run: npm test
