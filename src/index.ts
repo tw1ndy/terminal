@@ -173,11 +173,11 @@ async function handleShopCommand(env: Env, update: TelegramUpdate, command: stri
       return true;
     }
     const results = await env.DB.batch([
-      env.DB.prepare(`INSERT INTO reward_purchases (telegram_id, reward_id, price_xp, status, created_at)
-        SELECT ?, r.id, r.price_xp, 'pending', ?
+      env.DB.prepare(`INSERT OR IGNORE INTO reward_purchases (telegram_id, reward_id, price_xp, status, created_at, telegram_update_id)
+        SELECT ?, r.id, r.price_xp, 'pending', ?, ?
         FROM rewards r JOIN xp_wallets w ON w.telegram_id = ?
         WHERE r.id = ? AND r.is_active = 1 AND (r.quantity IS NULL OR r.quantity > 0)
-          AND w.available_xp >= r.price_xp`).bind(telegramId, now, telegramId, rewardId),
+          AND w.available_xp >= r.price_xp`).bind(telegramId, now, update.update_id, telegramId, rewardId),
       env.DB.prepare(`UPDATE xp_wallets SET available_xp = available_xp -
         (SELECT price_xp FROM reward_purchases WHERE id = last_insert_rowid())
         WHERE telegram_id = ? AND changes() = 1`).bind(telegramId),
@@ -190,7 +190,11 @@ async function handleShopCommand(env: Env, update: TelegramUpdate, command: stri
     ]);
     const purchaseId = results[0]?.meta.last_row_id;
     if ((results[0]?.meta.changes ?? 0) === 0 || !purchaseId) {
-      await sendTelegramMessage(env, m.chat.id, "Не удалось оформить покупку: проверь ID товара, наличие и баланс XP.");
+      const existing = await env.DB.prepare("SELECT id FROM reward_purchases WHERE telegram_update_id = ?")
+        .bind(update.update_id).first<{ id: number }>();
+      await sendTelegramMessage(env, m.chat.id, existing
+        ? `Заявка #${existing.id} уже создана для этой команды.`
+        : "Не удалось оформить покупку: проверь ID товара, наличие и баланс XP.");
       return true;
     }
     const purchase = await env.DB.prepare(`SELECT p.price_xp, r.title, u.first_name, u.username
@@ -236,9 +240,7 @@ async function handleShopCommand(env: Env, update: TelegramUpdate, command: stri
       await sendTelegramMessage(env, m.chat.id, "Проверь сумму (1–10000 XP) и причину.");
       return true;
     }
-    const result = await env.DB.prepare(`INSERT INTO penalties
-      (telegram_id, suggested_amount, reason, status, proposed_by, created_at)
-      SELECT ?, ?, ?, 'pending', ?, ? FROM users WHERE telegram_id = ?`)
+    const result = await env.DB.prepare(`undefined`)
       .bind(targetId, amount, reason, telegramId, now, targetId).run();
     if ((result.meta.changes ?? 0) === 0) {
       await sendTelegramMessage(env, m.chat.id, "Участник с таким Telegram ID не найден.");
@@ -365,11 +367,17 @@ async function handleShopCommand(env: Env, update: TelegramUpdate, command: stri
       await sendTelegramMessage(env, m.chat.id, "Формат: /addreward категория | название | цена_XP | описание | количество (необязательно)");
       return true;
     }
-    const result = await env.DB.prepare(`INSERT INTO rewards
-      (title, description, category, price_xp, quantity, is_active)
-      VALUES (?, ?, ?, ?, ?, 1)`).bind(title, description, category, price, quantity).run();
-    await logAdminAction(env, telegramId, "reward_created", String(result.meta.last_row_id ?? ""), { title, category, price }, now);
-    await sendTelegramMessage(env, m.chat.id, `Товар добавлен. ID: ${result.meta.last_row_id}`);
+    const result = await env.DB.prepare(`INSERT OR IGNORE INTO rewards
+      (title, description, category, price_xp, quantity, is_active, telegram_update_id)
+      VALUES (?, ?, ?, ?, ?, 1, ?)`).bind(title, description, category, price, quantity, update.update_id).run();
+    const rewardId = result.meta.changes ? result.meta.last_row_id :
+      (await env.DB.prepare("SELECT id FROM rewards WHERE telegram_update_id = ?")
+        .bind(update.update_id).first<{ id: number }>())?.id;
+    if (result.meta.changes) {
+      await logAdminAction(env, telegramId, "reward_created", String(rewardId ?? ""), { title, category, price }, now);
+    }
+    await sendTelegramMessage(env, m.chat.id, rewardId
+      ? `Товар добавлен. ID: ${rewardId}` : "Не удалось добавить товар.");
     return true;
   }
 
