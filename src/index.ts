@@ -709,26 +709,67 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
     return;
   }
 
-  if (command === "/top" || command === "/rating" || command === "/topseason") {
-    const seasonOnly = command === "/topseason";
-    if (seasonOnly) await ensureActiveSeason(env, m.date);
-    const result = seasonOnly
-      ? await env.DB.prepare(`SELECT u.first_name, u.username, ss.season_xp AS xp
-          FROM season_stats ss JOIN users u ON u.telegram_id = ss.telegram_id
-          JOIN seasons s ON s.id = ss.season_id
-          WHERE s.status = 'active'
-          ORDER BY ss.season_xp DESC, u.joined_at ASC LIMIT 10`).all<{
-            first_name: string; username: string | null; xp: number;
-          }>()
-      : await env.DB.prepare(`SELECT u.first_name, u.username, w.lifetime_xp AS xp
-          FROM xp_wallets w JOIN users u ON u.telegram_id = w.telegram_id
-          ORDER BY w.lifetime_xp DESC, u.joined_at ASC LIMIT 10`).all<{
-            first_name: string; username: string | null; xp: number;
-          }>();
+  const rankingCommands = ["/top", "/rating", "/topseason", "/topday", "/topweek", "/topmonth", "/topachievements", "/topstreaks"];
+  if (rankingCommands.includes(command)) {
+    const today = moscowDay(m.date);
+    const [year, month, date] = today.split("-").map(Number);
+    const dayStart = Math.floor(Date.UTC(year, month - 1, date) / 1000) - 3 * 60 * 60;
+    const weekday = new Date(Date.UTC(year, month - 1, date)).getUTCDay();
+    const mondayOffset = (weekday + 6) % 7;
+    const weekStart = dayStart - mondayOffset * 86400;
+    const monthStart = Math.floor(Date.UTC(year, month - 1, 1) / 1000) - 3 * 60 * 60;
+    let title = "Общий топ НК";
+    let suffix = "XP";
+    let result: { results?: Array<{ first_name: string; username: string | null; value: number; joined_at?: number }> };
+    if (command === "/topseason") {
+      await ensureActiveSeason(env, m.date);
+      title = "Топ сезона НК";
+      const query = await env.DB.prepare(`SELECT u.first_name, u.username, ss.season_xp AS value, u.joined_at
+        FROM season_stats ss JOIN users u ON u.telegram_id = ss.telegram_id
+        JOIN seasons s ON s.id = ss.season_id WHERE s.status = 'active'
+        ORDER BY ss.season_xp DESC, u.joined_at ASC LIMIT 10`).all<{
+          first_name: string; username: string | null; value: number; joined_at: number;
+        }>();
+      result = query;
+    } else if (command === "/topday" || command === "/topweek" || command === "/topmonth") {
+      const since = command === "/topday" ? dayStart : command === "/topweek" ? weekStart : monthStart;
+      title = command === "/topday" ? "Топ за сегодня" : command === "/topweek" ? "Топ за неделю" : "Топ за месяц";
+      const query = await env.DB.prepare(`SELECT u.first_name, u.username, SUM(x.amount) AS value, u.joined_at
+        FROM xp_transactions x JOIN users u ON u.telegram_id = x.telegram_id
+        WHERE x.amount > 0 AND x.created_at >= ?
+        GROUP BY x.telegram_id ORDER BY value DESC, u.joined_at ASC LIMIT 10`).bind(since).all<{
+          first_name: string; username: string | null; value: number; joined_at: number;
+        }>();
+      result = query;
+    } else if (command === "/topachievements") {
+      title = "Топ по достижениям";
+      suffix = "ач.";
+      const query = await env.DB.prepare(`SELECT u.first_name, u.username, COUNT(ua.achievement_id) AS value, u.joined_at
+        FROM users u LEFT JOIN user_achievements ua ON ua.telegram_id = u.telegram_id
+        GROUP BY u.telegram_id ORDER BY value DESC, u.joined_at ASC LIMIT 10`).all<{
+          first_name: string; username: string | null; value: number; joined_at: number;
+        }>();
+      result = query;
+    } else if (command === "/topstreaks") {
+      title = "Топ по сериям активности";
+      suffix = "дн.";
+      const query = await env.DB.prepare(`SELECT u.first_name, u.username, s.current_streak AS value, u.joined_at
+        FROM user_stats s JOIN users u ON u.telegram_id = s.telegram_id
+        ORDER BY s.current_streak DESC, s.longest_streak DESC, u.joined_at ASC LIMIT 10`).all<{
+          first_name: string; username: string | null; value: number; joined_at: number;
+        }>();
+      result = query;
+    } else {
+      const query = await env.DB.prepare(`SELECT u.first_name, u.username, w.lifetime_xp AS value, u.joined_at
+        FROM xp_wallets w JOIN users u ON u.telegram_id = w.telegram_id
+        ORDER BY w.lifetime_xp DESC, u.joined_at ASC LIMIT 10`).all<{
+          first_name: string; username: string | null; value: number; joined_at: number;
+        }>();
+      result = query;
+    }
     const lines = (result.results ?? []).map((row, i) =>
-      `${i + 1}. ${row.first_name || (row.username ? `@${row.username}` : "Участник")} — ${row.xp} XP`);
-    const title = seasonOnly ? "Топ сезона НК" : "Топ-10 НК";
-    await sendTelegramMessage(env, m.chat.id, lines.length ? `${title}\n${lines.join("\n")}` : "Рейтинг пока пуст.");
+      `${i + 1}. ${row.first_name || (row.username ? `@${row.username}` : "Участник")} — ${row.value} ${suffix}`);
+    await sendTelegramMessage(env, m.chat.id, lines.length ? `${title}\\n${lines.join("\\n")}` : "Рейтинг пока пуст.");
   }
 }
 
