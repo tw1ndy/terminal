@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dailyMessageMilestones, dailyRewardAmount, nextDailyClaimStreak, previousDay } from "../src/rewards";
+import { dailyMessageMilestones, dailyRewardAmount, nextDailyClaimStreak, previousDay, validateSeasonRewardSchedule } from "../src/rewards";
 
 describe("daily reward calendar", () => {
   it("handles month and year boundaries", () => {
@@ -34,5 +34,26 @@ describe("daily reward calendar", () => {
       { sourceKey: "100", amount: 35, note: "100 сообщений за день" }
     ]);
     expect(dailyMessageMilestones(101)).toHaveLength(2);
+  });
+});
+
+
+describe("season reward schedule validation", () => {
+  it("allows disabled and valid schedules", () => {
+    expect(validateSeasonRewardSchedule({})).toEqual({});
+    expect(validateSeasonRewardSchedule(undefined)).toEqual({});
+    expect(validateSeasonRewardSchedule({ "1": 500, "2": 300, "10": 25 })).toEqual({ "1": 500, "2": 300, "10": 25 });
+    expect(validateSeasonRewardSchedule({ "1": 0, "2": 300 })).toEqual({ "2": 300 });
+  });
+
+  it("rejects invalid places, strings, fractions and unsafe amounts", () => {
+    expect(validateSeasonRewardSchedule(null)).toEqual({});
+    expect(validateSeasonRewardSchedule([])).toBeNull();
+    expect(validateSeasonRewardSchedule({ "0": 100 })).toBeNull();
+    expect(validateSeasonRewardSchedule({ "11": 100 })).toBeNull();
+    expect(validateSeasonRewardSchedule({ "1": "500" })).toBeNull();
+    expect(validateSeasonRewardSchedule({ "1": 1.5 })).toBeNull();
+    expect(validateSeasonRewardSchedule({ "1": -1 })).toBeNull();
+    expect(validateSeasonRewardSchedule({ "1": 1000001 })).toBeNull();
   });
 });
