@@ -84,3 +84,20 @@ if monthly_count != 1:
     raise SystemExit(f"Monthly reward idempotency failed: {monthly_count}")
 
 print("OK idempotent D1-style XP credit and monthly reward constraints")
+
+foreign_key_errors = db.execute("PRAGMA foreign_key_check").fetchall()
+if foreign_key_errors:
+    raise SystemExit(f"Foreign key validation failed: {foreign_key_errors}")
+
+owner = db.execute(
+    "SELECT role, is_active FROM admins WHERE telegram_id = '891419692'"
+).fetchone()
+if owner != ("owner", 1):
+    raise SystemExit(f"Expected seeded owner admin, got: {owner}")
+
+default_xp = db.execute(
+    "SELECT value_json FROM settings WHERE key = 'message_xp'"
+).fetchone()
+if default_xp != ('3',):
+    raise SystemExit(f"Expected default message XP = 3, got: {default_xp}")
+
