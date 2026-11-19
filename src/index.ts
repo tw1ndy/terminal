@@ -574,7 +574,7 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
 
   if (command === "/start" || command === "/help") {
     await sendTelegramMessage(env, m.chat.id,
-      "НК Activity — система активности сообщества.\n/profile — профиль и XP.\n/achievements — твои достижения.\n/daily — ежедневная награда.\n/shop — магазин.\n/buy ID — купить товар.\n/myorders — мои покупки.\n/pending — заявки на проверку (админ).\n/adminstats — статистика (админ).\n/penalty ID сумма | причина — предложить штраф (админ).\n/pendingpenalties — очередь штрафов (админ).\n/approvepenalty ID или /rejectpenalty ID (админ).\n/addreward категория | название | цена | описание | количество (админ).\n/approve ID или /reject ID (админ).\n/top — общий топ-10.\n/topseason — рейтинг текущего сезона.");
+      "НК Activity — система активности сообщества.\n/profile — профиль и XP.\n/achievements — твои достижения.\n/daily — ежедневная награда.\n/shop — магазин.\n/buy ID — купить товар.\n/myorders — мои покупки.\n/pending — заявки на проверку (админ).\n/adminstats — статистика (админ).\n/penalty ID сумма | причина — предложить штраф (админ).\n/pendingpenalties — очередь штрафов (админ).\n/approvepenalty ID или /rejectpenalty ID (админ).\n/addreward категория | название | цена | описание | количество (админ).\n/approve ID или /reject ID (админ).\n/top — общий топ-10.\n/topseason — рейтинг текущего сезона.\n/myrank — твоё место в рейтингах.");
     return;
   }
   if (command === "/daily") {
@@ -612,6 +612,22 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
       `Профиль: ${displayName}\nLifetime XP: ${row.lifetime_xp}\nДоступно: ${row.available_xp} XP\nСезон: ${row.season_xp} XP\nСообщений: ${row.message_count}\nСерия активности: ${row.current_streak} дн. (рекорд: ${row.longest_streak})\nДостижения: ${row.achievements}`);
     return;
   }
+  if (command === "/myrank") {
+    await ensureActiveSeason(env, m.date);
+    const allTime = await env.DB.prepare(`SELECT place FROM (
+      SELECT w.telegram_id, ROW_NUMBER() OVER (ORDER BY w.lifetime_xp DESC, u.joined_at ASC) AS place
+      FROM xp_wallets w JOIN users u ON u.telegram_id = w.telegram_id
+    ) WHERE telegram_id = ?`).bind(telegramId).first<{ place: number }>();
+    const season = await env.DB.prepare(`SELECT place FROM (
+      SELECT ss.telegram_id, ROW_NUMBER() OVER (ORDER BY ss.season_xp DESC, u.joined_at ASC) AS place
+      FROM season_stats ss JOIN users u ON u.telegram_id = ss.telegram_id
+      JOIN seasons s ON s.id = ss.season_id WHERE s.status = 'active'
+    ) WHERE telegram_id = ?`).bind(telegramId).first<{ place: number }>();
+    await sendTelegramMessage(env, m.chat.id,
+      `Твоё место в общем рейтинге: ${allTime?.place ? `#${allTime.place}` : "пока нет"}\\nТвоё место в сезоне: ${season?.place ? `#${season.place}` : "пока нет"}`);
+    return;
+  }
+
   if (command === "/top" || command === "/rating" || command === "/topseason") {
     const seasonOnly = command === "/topseason";
     if (seasonOnly) await ensureActiveSeason(env, m.date);
