@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { Env, TelegramUpdate } from "./types";
-import { dailyMessageMilestones, dailyRewardAmount, nextDailyClaimStreak, previousDay } from "./rewards";
+import { dailyMessageMilestones, dailyRewardAmount, nextDailyClaimStreak, previousDay, validateSeasonRewardSchedule } from "./rewards";
 import { getLevelProgress, validateLevelThresholds } from "./levels";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -100,19 +100,6 @@ async function awardWeeklyRankingRewards(env: Env, now: number): Promise<void> {
         .bind(leader.telegram_id, amount)
     ]);
   }
-}
-
-function validateSeasonRewardSchedule(value: unknown): Record<string, number> | null {
-  if (value === undefined || value === null) return {};
-  if (typeof value !== 'object' || Array.isArray(value)) return null;
-  const out: Record<string, number> = {};
-  for (const [place, raw] of Object.entries(value as Record<string, unknown>)) {
-    if (!/^(?:[1-9]|10)$/.test(place)) return null;
-    const amount = Number(raw);
-    if (!Number.isSafeInteger(amount) || amount < 0 || amount > 1000000) return null;
-    if (amount > 0) out[place] = amount;
-  }
-  return out;
 }
 
 async function awardClosedSeasonRewards(env: Env, now: number): Promise<void> {
