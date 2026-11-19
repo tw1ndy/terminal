@@ -181,7 +181,7 @@ async function awardDailyXp(
 }
 
 async function hashMessageText(text: string | undefined): Promise<string | null> {
-  const normalized = (text ?? "").toLocaleLowerCase("ru-RU").replace(/\\s+/g, " ").trim();
+  const normalized = (text ?? "").toLocaleLowerCase("ru-RU").replace(/\s+/g, " ").trim();
   if (normalized.length < 12) return null;
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(normalized));
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
