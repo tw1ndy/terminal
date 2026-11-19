@@ -16,6 +16,7 @@ function moscowDay(unixSeconds: number): string {
 async function recordGroupMessage(env: Env, update: TelegramUpdate): Promise<void> {
   const m = update.message;
   if (!m?.from || m.from.is_bot || !["group", "supergroup"].includes(m.chat.type)) return;
+  if (env.TARGET_CHAT_ID && String(m.chat.id) !== env.TARGET_CHAT_ID) return;
 
   const userId = String(m.from.id);
   const chatId = String(m.chat.id);
@@ -86,6 +87,7 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
   const m = update.message;
   const text = m?.text?.trim();
   if (!m || !text || !m.from || !["group", "supergroup", "private"].includes(m.chat.type)) return;
+  if (m.chat.type !== "private" && env.TARGET_CHAT_ID && String(m.chat.id) !== env.TARGET_CHAT_ID) return;
   const command = text.split(/\s+/, 1)[0].split("@", 1)[0].toLowerCase();
   const userId = String(m.from.id);
 
@@ -111,7 +113,7 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
     }
     const displayName = row.first_name || (row.username ? `@${row.username}` : "Участник");
     await sendTelegramMessage(env, m.chat.id,
-      `Профиль: ${displayName}\nУровень XP: ${row.lifetime_xp} Lifetime XP\nДоступно: ${row.available_xp} XP\nСезон: ${row.season_xp} XP\nСообщений: ${row.message_count}\nСерия: ${row.current_streak} дн. (рекорд: ${row.longest_streak})`);
+      `Профиль: ${displayName}\nLifetime XP: ${row.lifetime_xp}\nДоступно: ${row.available_xp} XP\nСезон: ${row.season_xp} XP\nСообщений: ${row.message_count}\nСерия: ${row.current_streak} дн. (рекорд: ${row.longest_streak})`);
     return;
   }
 
@@ -152,10 +154,19 @@ app.post("/webhook", async c => {
   if (!Number.isSafeInteger(update.update_id)) return c.json({ ok: false }, 400);
 
   try {
-    await c.env.DB.prepare(
+    const inserted = await c.env.DB.prepare(
       "INSERT OR IGNORE INTO processed_updates (update_id, processed_at) VALUES (?, ?)"
     ).bind(update.update_id, Math.floor(Date.now() / 1000)).run();
-    await recordGroupMessage(c.env, update);
+    if ((inserted.meta.changes ?? 0) === 0) return c.json({ ok: true, duplicate: true });
+
+    try {
+      await recordGroupMessage(c.env, update);
+      await handleCommand(c.env, update);
+    } catch (processingError) {
+      await c.env.DB.prepare("DELETE FROM processed_updates WHERE update_id = ?")
+        .bind(update.update_id).run();
+      throw processingError;
+    }
     return c.json({ ok: true });
   } catch (error) {
     console.error("Webhook processing failed", error);
