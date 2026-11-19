@@ -909,7 +909,7 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
     return;
   }
   if (command === "/profile" || command === "/me") {
-    const row = await env.DB.prepare(`SELECT u.first_name, u.username, s.message_count,
+    const row = await env.DB.prepare(`SELECT u.first_name, u.last_name, u.username, s.message_count,
       s.current_streak, s.longest_streak, w.lifetime_xp, w.available_xp, w.season_xp,
       (SELECT COUNT(*) FROM user_achievements a WHERE a.telegram_id = u.telegram_id) AS achievements,
       (SELECT title FROM member_rewards mr WHERE mr.telegram_id = u.telegram_id AND mr.reward_type = 'prefix'
@@ -917,7 +917,7 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
       FROM users u JOIN user_stats s ON s.telegram_id = u.telegram_id
       JOIN xp_wallets w ON w.telegram_id = u.telegram_id WHERE u.telegram_id = ?`)
       .bind(telegramId).first<{
-        first_name: string; username: string | null; message_count: number;
+        first_name: string; last_name: string | null; username: string | null; message_count: number;
         current_streak: number; longest_streak: number; lifetime_xp: number;
         available_xp: number; season_xp: number; achievements: number; prefix_title: string | null;
       }>();
@@ -925,7 +925,7 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
       await sendTelegramMessage(env, m.chat.id, "Профиль пока не создан. Напиши сообщение в основной группе и повтори команду.");
       return;
     }
-    const displayName = row.first_name || (row.username ? `@${row.username}` : "Участник");
+    const displayName = [row.first_name, row.last_name].filter(Boolean).join(" ") || (row.username ? `@${row.username}` : "Участник");
     const thresholds = validateLevelThresholds(await getSetting<unknown>(env, "level_thresholds", {})) ?? {};
     const level = getLevelProgress(row.lifetime_xp, thresholds);
     const levelLine = level
