@@ -26,6 +26,44 @@ function moscowStartOfDay(day: string): number {
   return Math.floor(Date.UTC(year, month - 1, date) / 1000) - 3 * 60 * 60;
 }
 
+async function awardMonthlyRankingRewards(env: Env, now: number): Promise<void> {
+  const today = moscowDay(now);
+  if (!today.endsWith("-01")) return;
+  const [year, month] = today.split("-").map(Number);
+  const periodStartDate = new Date(Date.UTC(year, month - 2, 1)).toISOString().slice(0, 10);
+  const periodKey = periodStartDate.slice(0, 7);
+  const periodStart = moscowStartOfDay(periodStartDate);
+  const periodEnd = moscowStartOfDay(today);
+  const leaders = await env.DB.prepare(`SELECT telegram_id, SUM(amount) AS xp
+    FROM xp_transactions
+    WHERE amount > 0 AND transaction_type NOT IN ('purchase_refund', 'weekly_reward')
+      AND created_at >= ? AND created_at < ?
+    GROUP BY telegram_id ORDER BY xp DESC, telegram_id ASC LIMIT 3`)
+    .bind(periodStart, periodEnd).all<{ telegram_id: string; xp: number }>();
+  for (const [index, leader] of (leaders.results ?? []).entries()) {
+    if (index < 2) {
+      const title = index === 0 ? `Победитель месяца · ${periodKey}` : `Призёр месяца · ${periodKey}`;
+      await env.DB.prepare(`INSERT OR IGNORE INTO member_rewards
+        (telegram_id, reward_type, title, period_key, created_at)
+        VALUES (?, 'prefix', ?, ?, ?)`).bind(leader.telegram_id, title, periodKey, now).run();
+    } else {
+      const achievementId = `monthly_top3_${periodKey.replace("-", "_")}`;
+      const title = `Топ-3 месяца · ${periodKey}`;
+      await env.DB.batch([
+        env.DB.prepare(`INSERT OR IGNORE INTO achievements
+          (id, title, description, icon, rarity, xp_bonus, condition_json, is_active)
+          VALUES (?, ?, 'Войди в тройку лидеров месячного рейтинга', '🏅', 'rare', 0, ?, 1)`)
+          .bind(achievementId, title, JSON.stringify({ type: "monthly_rank", value: 3, period: periodKey })),
+        env.DB.prepare(`INSERT OR IGNORE INTO user_achievements (telegram_id, achievement_id, earned_at)
+          SELECT ?, id, ? FROM achievements WHERE id = ?`).bind(leader.telegram_id, now, achievementId),
+        env.DB.prepare(`INSERT OR IGNORE INTO member_rewards
+          (telegram_id, reward_type, title, period_key, created_at)
+          VALUES (?, 'achievement', ?, ?, ?)`).bind(leader.telegram_id, title, periodKey, now)
+      ]);
+    }
+  }
+}
+
 async function awardWeeklyRankingRewards(env: Env, now: number): Promise<void> {
   const today = moscowDay(now);
   const [year, month, date] = today.split("-").map(Number);
@@ -987,6 +1025,7 @@ export default {
     const now = Math.floor(Date.now() / 1000);
     await ensureActiveSeason(env, now);
     await awardWeeklyRankingRewards(env, now);
+    await awardMonthlyRankingRewards(env, now);
     await env.DB.prepare("DELETE FROM processed_updates WHERE processed_at < ?")
       .bind(now - 14 * 24 * 60 * 60).run();
   }
