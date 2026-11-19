@@ -139,6 +139,54 @@ async function logAdminAction(
     .bind(actorId, action, targetId, JSON.stringify(details), createdAt).run();
 }
 
+async function verifyTelegramWebApp(env: Env, initData: string): Promise<{ id: string; first_name: string; username?: string } | null> {
+  if (!env.TELEGRAM_BOT_TOKEN || !initData || initData.length > 8192) return null;
+  try {
+    const params = new URLSearchParams(initData);
+    const receivedHash = params.get("hash");
+    const authDate = Number(params.get("auth_date"));
+    const userJson = params.get("user");
+    if (!receivedHash || !/^[a-f0-9]{64}$/i.test(receivedHash) || !userJson ||
+      !Number.isSafeInteger(authDate)) return null;
+    const now = Math.floor(Date.now() / 1000);
+    if (authDate > now + 60 || now - authDate > 86400) return null;
+
+    const dataCheckString = [...params.entries()]
+      .filter(([key]) => key !== "hash" && key !== "signature")
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, value]) => `${key}=${value}`)
+      .join("\n");
+    const encoder = new TextEncoder();
+    const webAppKey = await crypto.subtle.importKey(
+      "raw", encoder.encode("WebAppData"), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+    );
+    const secret = await crypto.subtle.sign("HMAC", webAppKey, encoder.encode(env.TELEGRAM_BOT_TOKEN));
+    const signingKey = await crypto.subtle.importKey(
+      "raw", secret, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+    );
+    const digest = await crypto.subtle.sign("HMAC", signingKey, encoder.encode(dataCheckString));
+    const calculatedHash = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
+    let mismatch = calculatedHash.length ^ receivedHash.length;
+    for (let i = 0; i < Math.min(calculatedHash.length, receivedHash.length); i++) {
+      mismatch |= calculatedHash.charCodeAt(i) ^ receivedHash.charCodeAt(i);
+    }
+    if (mismatch !== 0) return null;
+    const user = JSON.parse(userJson) as { id?: number; first_name?: string; username?: string };
+    if (!Number.isSafeInteger(user.id) || !user.id) return null;
+    return { id: String(user.id), first_name: user.first_name ?? "", username: user.username };
+  } catch {
+    return null;
+  }
+}
+
+async function authorizeWebAdmin(c: import("hono").Context<{ Bindings: Env }>): Promise<string | null> {
+  const authorization = c.req.header("Authorization") ?? "";
+  if (!authorization.startsWith("tma ")) return null;
+  const user = await verifyTelegramWebApp(c.env, authorization.slice(4));
+  if (!user || !(await isAdmin(c.env, user.id))) return null;
+  return user.id;
+}
+
 async function isAdmin(env: Env, telegramId: string): Promise<boolean> {
   if (env.OWNER_TELEGRAM_ID && telegramId === env.OWNER_TELEGRAM_ID) return true;
   const row = await env.DB.prepare("SELECT 1 AS allowed FROM admins WHERE telegram_id = ? AND is_active = 1")
@@ -651,6 +699,130 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
   }
 }
 
+app.get("/api/admin/dashboard", async c => {
+  const actorId = await authorizeWebAdmin(c);
+  if (!actorId) return c.json({ error: "unauthorized" }, 401);
+  const now = Math.floor(Date.now() / 1000);
+  const day = moscowDay(now);
+  await ensureActiveSeason(c.env, now);
+  const [users, messages, xp, pendingPurchases, pendingPenalties, season, top, purchases, penalties, logs] = await Promise.all([
+    c.env.DB.prepare("SELECT COUNT(*) AS total FROM users WHERE is_active = 1").first<{ total: number }>(),
+    c.env.DB.prepare("SELECT COUNT(*) AS total FROM message_events WHERE event_day = ?").bind(day).first<{ total: number }>(),
+    c.env.DB.prepare("SELECT COALESCE(SUM(lifetime_xp), 0) AS total FROM xp_wallets").first<{ total: number }>(),
+    c.env.DB.prepare("SELECT COUNT(*) AS total FROM reward_purchases WHERE status = 'pending'").first<{ total: number }>(),
+    c.env.DB.prepare("SELECT COUNT(*) AS total FROM penalties WHERE status = 'pending'").first<{ total: number }>(),
+    c.env.DB.prepare("SELECT title, starts_at, ends_at FROM seasons WHERE status = 'active' ORDER BY id DESC LIMIT 1")
+      .first<{ title: string; starts_at: number; ends_at: number }>(),
+    c.env.DB.prepare(`SELECT u.telegram_id, u.first_name, u.username, w.lifetime_xp, w.available_xp
+      FROM xp_wallets w JOIN users u ON u.telegram_id = w.telegram_id
+      ORDER BY w.lifetime_xp DESC, u.joined_at ASC LIMIT 10`).all<{
+        telegram_id: string; first_name: string; username: string | null; lifetime_xp: number; available_xp: number;
+      }>(),
+    c.env.DB.prepare(`SELECT p.id, p.price_xp, p.created_at, r.title, u.telegram_id, u.first_name, u.username
+      FROM reward_purchases p JOIN rewards r ON r.id = p.reward_id
+      JOIN users u ON u.telegram_id = p.telegram_id WHERE p.status = 'pending'
+      ORDER BY p.created_at ASC LIMIT 20`).all<{
+        id: number; price_xp: number; created_at: number; title: string; telegram_id: string;
+        first_name: string; username: string | null;
+      }>(),
+    c.env.DB.prepare(`SELECT p.id, p.suggested_amount, p.reason, p.created_at, u.telegram_id, u.first_name, u.username
+      FROM penalties p JOIN users u ON u.telegram_id = p.telegram_id WHERE p.status = 'pending'
+      ORDER BY p.created_at ASC LIMIT 20`).all<{
+        id: number; suggested_amount: number; reason: string; created_at: number; telegram_id: string;
+        first_name: string; username: string | null;
+      }>(),
+    c.env.DB.prepare(`SELECT actor_id, action, target_id, details_json, created_at
+      FROM admin_logs ORDER BY id DESC LIMIT 12`).all<{
+        actor_id: string; action: string; target_id: string | null; details_json: string; created_at: number;
+      }>()
+  ]);
+  return c.json({
+    ok: true,
+    stats: {
+      users: users?.total ?? 0, messagesToday: messages?.total ?? 0,
+      lifetimeXp: xp?.total ?? 0, pendingPurchases: pendingPurchases?.total ?? 0,
+      pendingPenalties: pendingPenalties?.total ?? 0
+    },
+    season: season ?? null,
+    top: top.results ?? [],
+    purchases: purchases.results ?? [],
+    penalties: penalties.results ?? [],
+    logs: logs.results ?? []
+  });
+});
+
+app.post("/api/admin/purchases/:id/:action", async c => {
+  const actorId = await authorizeWebAdmin(c);
+  if (!actorId) return c.json({ error: "unauthorized" }, 401);
+  const id = Number(c.req.param("id"));
+  const action = c.req.param("action");
+  if (!Number.isSafeInteger(id) || id < 1 || !["approve", "reject"].includes(action)) {
+    return c.json({ error: "invalid_request" }, 400);
+  }
+  const now = Math.floor(Date.now() / 1000);
+  if (action === "approve") {
+    const result = await c.env.DB.prepare("UPDATE reward_purchases SET status = 'approved' WHERE id = ? AND status = 'pending'")
+      .bind(id).run();
+    if ((result.meta.changes ?? 0) === 0) return c.json({ error: "not_pending" }, 409);
+    await logAdminAction(c.env, actorId, "purchase_approved", String(id), { source: "web_admin" }, now);
+    return c.json({ ok: true });
+  }
+  const results = await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE reward_purchases SET status = 'rejected' WHERE id = ? AND status = 'pending'").bind(id),
+    c.env.DB.prepare(`INSERT OR IGNORE INTO xp_transactions
+      (telegram_id, amount, transaction_type, source_id, note, created_at)
+      SELECT telegram_id, price_xp, 'purchase_refund', CAST(id AS TEXT), 'Возврат за отклонённую покупку', ?
+      FROM reward_purchases WHERE id = ? AND status = 'rejected' AND changes() = 1`).bind(now, id),
+    c.env.DB.prepare(`UPDATE xp_wallets SET available_xp = available_xp +
+      (SELECT amount FROM xp_transactions WHERE transaction_type = 'purchase_refund' AND source_id = ?)
+      WHERE telegram_id = (SELECT telegram_id FROM reward_purchases WHERE id = ?) AND changes() = 1`).bind(String(id), id),
+    c.env.DB.prepare(`UPDATE rewards SET quantity = CASE WHEN quantity IS NULL THEN NULL ELSE quantity + 1 END
+      WHERE id = (SELECT reward_id FROM reward_purchases WHERE id = ?) AND changes() = 1`).bind(id)
+  ]);
+  if ((results[0]?.meta.changes ?? 0) === 0) return c.json({ error: "not_pending" }, 409);
+  await logAdminAction(c.env, actorId, "purchase_rejected", String(id), { source: "web_admin" }, now);
+  return c.json({ ok: true });
+});
+
+app.post("/api/admin/penalties/:id/:action", async c => {
+  const actorId = await authorizeWebAdmin(c);
+  if (!actorId) return c.json({ error: "unauthorized" }, 401);
+  const id = Number(c.req.param("id"));
+  const action = c.req.param("action");
+  if (!Number.isSafeInteger(id) || id < 1 || !["approve", "reject"].includes(action)) {
+    return c.json({ error: "invalid_request" }, 400);
+  }
+  const now = Math.floor(Date.now() / 1000);
+  if (action === "reject") {
+    const result = await c.env.DB.prepare(`UPDATE penalties SET status = 'rejected', reviewed_by = ?, reviewed_at = ?
+      WHERE id = ? AND status = 'pending'`).bind(actorId, now, id).run();
+    if ((result.meta.changes ?? 0) === 0) return c.json({ error: "not_pending" }, 409);
+    await logAdminAction(c.env, actorId, "penalty_rejected", String(id), { source: "web_admin" }, now);
+    return c.json({ ok: true });
+  }
+  const results = await c.env.DB.batch([
+    c.env.DB.prepare(`UPDATE penalties SET status = 'approved', approved_amount = suggested_amount,
+      reviewed_by = ?, reviewed_at = ?
+      WHERE id = ? AND status = 'pending'
+        AND EXISTS (SELECT 1 FROM xp_wallets w WHERE w.telegram_id = penalties.telegram_id
+          AND w.available_xp >= penalties.suggested_amount)`).bind(actorId, now, id),
+    c.env.DB.prepare(`INSERT INTO xp_transactions
+      (telegram_id, amount, transaction_type, source_id, note, created_at)
+      SELECT telegram_id, -approved_amount, 'penalty', CAST(id AS TEXT), reason, ?
+      FROM penalties WHERE id = ? AND status = 'approved' AND changes() = 1`).bind(now, id),
+    c.env.DB.prepare(`UPDATE xp_wallets SET available_xp = available_xp +
+      (SELECT amount FROM xp_transactions WHERE transaction_type = 'penalty' AND source_id = ?)
+      WHERE telegram_id = (SELECT telegram_id FROM penalties WHERE id = ?) AND changes() = 1`).bind(String(id), id)
+  ]);
+  if ((results[0]?.meta.changes ?? 0) === 0) {
+    const pending = await c.env.DB.prepare("SELECT status FROM penalties WHERE id = ?").bind(id)
+      .first<{ status: string }>();
+    return c.json({ error: pending?.status === "pending" ? "insufficient_xp" : "not_pending" }, 409);
+  }
+  await logAdminAction(c.env, actorId, "penalty_approved", String(id), { source: "web_admin" }, now);
+  return c.json({ ok: true });
+});
+
 app.get("/", c => c.json({ service: "nk-activity", status: "ok", version: "0.3.0" }));
 app.get("/health", async c => {
   try {
@@ -691,7 +863,8 @@ app.post("/webhook", async c => {
   }
 });
 
-app.notFound(c => c.json({ error: "not_found" }, 404));
+app.get("/admin", async c => c.env.ASSETS.fetch(new Request(new URL("/index.html", c.req.url), c.req.raw)));
+app.notFound(c => c.env.ASSETS.fetch(c.req.raw));
 export default {
   fetch: app.fetch,
   async scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext) {
