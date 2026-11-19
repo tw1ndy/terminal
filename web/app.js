@@ -111,6 +111,7 @@
     $("settingDailyCap").value = data.settings.dailyXpCap;
     $("settingSeasonDays").value = data.settings.seasonDays;
     $("settingLevelThresholds").value = JSON.stringify(data.settings.levelThresholds || {}, null, 2);
+    $("settingSeasonRewards").value = JSON.stringify(data.settings.seasonRewardSchedule || {}, null, 2);
     renderQueue($("purchases"), data.purchases, "purchase", data.permissions.shopReview);
     renderQueue($("penalties"), data.penalties, "penalty", data.permissions.penaltyReview);
 
@@ -191,13 +192,14 @@
           messageXp: Number($("settingMessageXp").value),
           dailyXpCap: Number($("settingDailyCap").value),
           seasonDays: Number($("settingSeasonDays").value),
-          levelThresholds: JSON.parse($("settingLevelThresholds").value || "{}")
+          levelThresholds: JSON.parse($("settingLevelThresholds").value || "{}"),
+          seasonRewardSchedule: JSON.parse($("settingSeasonRewards").value || "{}")
         })
       });
       setNotice("Параметры экономики сохранены.", "success");
       await load();
     } catch (error) {
-      setNotice(error.message === "invalid_settings" ? "Проверь экономику и пороги уровней: уровень 1 = 0 XP, уровни подряд, каждый следующий порог выше предыдущего; максимум 100 уровней." : (error instanceof SyntaxError ? "Пороги уровней должны быть корректным JSON-объектом." : error.message), "error");
+      setNotice(error.message === "invalid_settings" ? "Проверь экономику, пороги уровней и награды сезона (места 1–10, XP от 0 до 1000000): уровень 1 = 0 XP, уровни подряд, каждый следующий порог выше предыдущего; максимум 100 уровней." : (error instanceof SyntaxError ? "Пороги уровней должны быть корректным JSON-объектом." : error.message), "error");
     } finally { button.disabled = false; }
   });
   $("searchMembers").addEventListener("click", () => loadMembers());
