@@ -624,7 +624,7 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
       JOIN seasons s ON s.id = ss.season_id WHERE s.status = 'active'
     ) WHERE telegram_id = ?`).bind(telegramId).first<{ place: number }>();
     await sendTelegramMessage(env, m.chat.id,
-      `Твоё место в общем рейтинге: ${allTime?.place ? `#${allTime.place}` : "пока нет"}\\nТвоё место в сезоне: ${season?.place ? `#${season.place}` : "пока нет"}`);
+      `Твоё место в общем рейтинге: ${allTime?.place ? `#${allTime.place}` : "пока нет"}\nТвоё место в сезоне: ${season?.place ? `#${season.place}` : "пока нет"}`);
     return;
   }
 
