@@ -41,30 +41,44 @@ async function awardMonthlyRankingRewards(env: Env, now: number): Promise<void> 
       AND created_at >= ? AND created_at < ?
     GROUP BY telegram_id ORDER BY xp DESC, telegram_id ASC LIMIT 3`)
     .bind(periodStart, periodEnd).all<{ telegram_id: string; xp: number }>();
+
   for (const [index, leader] of (leaders.results ?? []).entries()) {
+    const title = index === 0
+      ? `Победитель месяца · ${periodKey}`
+      : index === 1
+        ? `Призёр месяца · ${periodKey}`
+        : `Топ-3 месяца · ${periodKey}`;
+
     if (index < 2) {
-      const title = index === 0 ? `Победитель месяца · ${periodKey}` : `Призёр месяца · ${periodKey}`;
       await env.DB.prepare(`INSERT OR IGNORE INTO member_rewards
         (telegram_id, reward_type, title, period_key, created_at)
         VALUES (?, 'prefix', ?, ?, ?)`).bind(leader.telegram_id, title, periodKey, now).run();
-    } else {
-      const achievementId = `monthly_top3_${periodKey.replace("-", "_")}`;
-      const title = `Топ-3 месяца · ${periodKey}`;
+    }
+
+    if (index === 0 || index === 2) {
+      const achievementId = index === 0
+        ? `monthly_winner_${periodKey.replace("-", "_")}`
+        : `monthly_top3_${periodKey.replace("-", "_")}`;
+      const achievementTitle = index === 0 ? `Победитель месяца · ${periodKey}` : title;
       await env.DB.batch([
         env.DB.prepare(`INSERT OR IGNORE INTO achievements
           (id, title, description, icon, rarity, xp_bonus, condition_json, is_active)
-          VALUES (?, ?, 'Войди в тройку лидеров месячного рейтинга', '🏅', 'rare', 0, ?, 1)`)
-          .bind(achievementId, title, JSON.stringify({ type: "monthly_rank", value: 3, period: periodKey })),
+          VALUES (?, ?, ?, '🏅', 'rare', 0, ?, 1)`)
+          .bind(
+            achievementId,
+            achievementTitle,
+            index === 0 ? "Займи первое место в месячном рейтинге" : "Войди в тройку лидеров месячного рейтинга",
+            JSON.stringify({ type: "monthly_rank", value: index === 0 ? 1 : 3, period: periodKey })
+          ),
         env.DB.prepare(`INSERT OR IGNORE INTO user_achievements (telegram_id, achievement_id, earned_at)
           SELECT ?, id, ? FROM achievements WHERE id = ?`).bind(leader.telegram_id, now, achievementId),
         env.DB.prepare(`INSERT OR IGNORE INTO member_rewards
           (telegram_id, reward_type, title, period_key, created_at)
-          VALUES (?, 'achievement', ?, ?, ?)`).bind(leader.telegram_id, title, periodKey, now)
+          VALUES (?, 'achievement', ?, ?, ?)`).bind(leader.telegram_id, achievementTitle, periodKey, now)
       ]);
     }
   }
 }
-
 async function awardWeeklyRankingRewards(env: Env, now: number): Promise<void> {
   const today = moscowDay(now);
   const [year, month, date] = today.split("-").map(Number);
