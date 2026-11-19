@@ -86,12 +86,12 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
   const m = update.message;
   const text = m?.text?.trim();
   if (!m || !text || !m.from || !["group", "supergroup", "private"].includes(m.chat.type)) return;
-  const command = text.split(/\\s+/, 1)[0].split("@", 1)[0].toLowerCase();
+  const command = text.split(/\s+/, 1)[0].split("@", 1)[0].toLowerCase();
   const userId = String(m.from.id);
 
   if (command === "/start" || command === "/help") {
     await sendTelegramMessage(env, m.chat.id,
-      "НК Activity — система активности сообщества.\\n/profile — твой профиль и XP.\\n/top — топ-10 участников.");
+      "НК Activity — система активности сообщества.\n/profile — твой профиль и XP.\n/top — топ-10 участников.");
     return;
   }
 
@@ -111,7 +111,7 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
     }
     const displayName = row.first_name || (row.username ? `@${row.username}` : "Участник");
     await sendTelegramMessage(env, m.chat.id,
-      `Профиль: ${displayName}\\nУровень XP: ${row.lifetime_xp} Lifetime XP\\nДоступно: ${row.available_xp} XP\\nСезон: ${row.season_xp} XP\\nСообщений: ${row.message_count}\\nСерия: ${row.current_streak} дн. (рекорд: ${row.longest_streak})`);
+      `Профиль: ${displayName}\nУровень XP: ${row.lifetime_xp} Lifetime XP\nДоступно: ${row.available_xp} XP\nСезон: ${row.season_xp} XP\nСообщений: ${row.message_count}\nСерия: ${row.current_streak} дн. (рекорд: ${row.longest_streak})`);
     return;
   }
 
@@ -123,7 +123,7 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
       }>();
     const lines = (result.results ?? []).map((row, i) =>
       `${i + 1}. ${row.first_name || (row.username ? `@${row.username}` : "Участник")} — ${row.lifetime_xp} XP`);
-    await sendTelegramMessage(env, m.chat.id, lines.length ? `Топ-10 НК\\n${lines.join("\\n")}` : "Рейтинг пока пуст.");
+    await sendTelegramMessage(env, m.chat.id, lines.length ? `Топ-10 НК\n${lines.join("\n")}` : "Рейтинг пока пуст.");
   }
 }
 
