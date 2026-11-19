@@ -240,14 +240,21 @@ async function handleShopCommand(env: Env, update: TelegramUpdate, command: stri
       await sendTelegramMessage(env, m.chat.id, "Проверь сумму (1–10000 XP) и причину.");
       return true;
     }
-    const result = await env.DB.prepare(`undefined`)
-      .bind(targetId, amount, reason, telegramId, now, targetId).run();
-    if ((result.meta.changes ?? 0) === 0) {
+    const result = await env.DB.prepare(`INSERT OR IGNORE INTO penalties
+      (telegram_id, suggested_amount, reason, status, proposed_by, created_at, telegram_update_id)
+      SELECT ?, ?, ?, 'pending', ?, ?, ? FROM users WHERE telegram_id = ?`)
+      .bind(targetId, amount, reason, telegramId, now, update.update_id, targetId).run();
+    const penaltyId = result.meta.changes ? result.meta.last_row_id :
+      (await env.DB.prepare("SELECT id FROM penalties WHERE telegram_update_id = ?")
+        .bind(update.update_id).first<{ id: number }>())?.id;
+    if (!penaltyId) {
       await sendTelegramMessage(env, m.chat.id, "Участник с таким Telegram ID не найден.");
       return true;
     }
-    await logAdminAction(env, telegramId, "penalty_proposed", String(result.meta.last_row_id ?? ""), { targetId, amount, reason }, now);
-    await sendTelegramMessage(env, m.chat.id, `Штраф #${result.meta.last_row_id} создан и ожидает подтверждения. XP пока не списаны.`);
+    if (result.meta.changes) {
+      await logAdminAction(env, telegramId, "penalty_proposed", String(penaltyId), { targetId, amount, reason }, now);
+    }
+    await sendTelegramMessage(env, m.chat.id, `Штраф #${penaltyId} создан и ожидает подтверждения. XP пока не списаны.`);
     return true;
   }
 
