@@ -64,7 +64,7 @@
 6. Обычные переменные Worker: `TARGET_CHAT_ID=-1004353159956`, `APP_TIMEZONE=Europe/Moscow`, `APP_ENV=production`.
 7. Применить миграции к удалённой D1: `npx wrangler d1 migrations apply nk-activity-db --remote`.
 8. После успешного деплоя установить webhook Telegram на URL `https://nk-activity.<твой-subdomain>.workers.dev/webhook`, передав тот же `TELEGRAM_WEBHOOK_SECRET` как `secret_token`.
-9. Проверить `/health`, затем отправить `/start`, `/profile` и `/top` в тестовой группе.
+9. Проверить `/health`, затем отправить `/start`, `/profile`, `/daily`, `/achievements`, `/shop`, `/top` и `/topseason` в тестовой группе.
 
 **Не подключать основную группу до проверки начисления XP, дневного лимита и повторной доставки webhook.** Токены и секреты не добавлять в GitHub.
 
