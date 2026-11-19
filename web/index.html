@@ -4,19 +4,54 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0b0b10">
-  <title>НК Activity — Панель управления</title>
+  <title>НК Activity — Админ-панель</title>
   <link rel="stylesheet" href="/style.css">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="/app.js" defer></script>
 </head>
 <body>
   <main class="shell">
-    <header><div class="mark">НК</div><div><p class="eyebrow">COMMUNITY SYSTEM</p><h1>Activity</h1></div><span class="status">SYSTEM</span></header>
-    <section class="hero"><p class="eyebrow">CONTROL CENTER</p><h2>Активность сообщества<br><span>под контролем.</span></h2><p>Панель управления НК Activity. Подключение администратора будет включено после настройки авторизации.</p></section>
-    <section class="grid">
-      <article><small>ПЛАТФОРМА</small><strong>Cloudflare</strong><p>Workers · D1 · Pages</p></article>
-      <article><small>ЭКОНОМИКА</small><strong>3 XP</strong><p>За подходящее сообщение</p></article>
-      <article><small>ЧАСОВОЙ ПОЯС</small><strong>MSK</strong><p>Europe/Moscow</p></article>
+    <header>
+      <div class="brand"><div class="mark">НК</div><div><p class="eyebrow">COMMUNITY SYSTEM</p><h1>Activity <span>CONTROL</span></h1></div></div>
+      <button class="refresh" id="refresh" type="button">Обновить <span aria-hidden="true">↻</span></button>
+    </header>
+    <section class="hero">
+      <div><p class="eyebrow">ADMINISTRATOR WORKSPACE</p><h2>Панель управления<br><span>сообществом.</span></h2></div>
+      <p class="sub">Оперативная статистика, заявки магазина и модерационные решения в одном месте.</p>
     </section>
-    <footer>НК ACTIVITY <span>EARLY BUILD · 0.1.0</span></footer>
+    <div id="notice" class="notice" role="status">Проверяем доступ администратора…</div>
+    <section class="stats" aria-label="Статистика">
+      <article class="stat"><small>УЧАСТНИКИ</small><strong id="users">—</strong><span>Активные профили</span></article>
+      <article class="stat"><small>СООБЩЕНИЯ СЕГОДНЯ</small><strong id="messages">—</strong><span>По Москве</span></article>
+      <article class="stat"><small>LIFETIME XP</small><strong id="xp">—</strong><span>Всего в системе</span></article>
+      <article class="stat"><small>ЗАЯВКИ МАГАЗИНА</small><strong id="pendingPurchases">—</strong><span>Ожидают решения</span></article>
+      <article class="stat"><small>ШТРАФЫ</small><strong id="pendingPenalties">—</strong><span>Ожидают подтверждения</span></article>
+    </section>
+    <section class="season panel">
+      <div><p class="eyebrow">CURRENT SEASON</p><h3 id="seasonTitle">Загрузка сезона…</h3></div>
+      <p id="seasonDates">—</p>
+    </section>
+    <section class="columns">
+      <section class="panel">
+        <div class="section-head"><div><p class="eyebrow">SHOP REQUESTS</p><h3>Покупки на проверке</h3></div><span class="count" id="purchaseCount">0</span></div>
+        <div id="purchases" class="queue"><p class="empty">Загрузка…</p></div>
+      </section>
+      <section class="panel">
+        <div class="section-head"><div><p class="eyebrow">MODERATION</p><h3>Предложенные штрафы</h3></div><span class="count" id="penaltyCount">0</span></div>
+        <div id="penalties" class="queue"><p class="empty">Загрузка…</p></div>
+      </section>
+    </section>
+    <section class="columns lower">
+      <section class="panel">
+        <div class="section-head"><div><p class="eyebrow">LEADERBOARD</p><h3>Топ участников</h3></div></div>
+        <div id="top" class="leaderboard"><p class="empty">Загрузка…</p></div>
+      </section>
+      <section class="panel">
+        <div class="section-head"><div><p class="eyebrow">AUDIT TRAIL</p><h3>Последние действия</h3></div></div>
+        <div id="logs" class="logs"><p class="empty">Загрузка…</p></div>
+      </section>
+    </section>
+    <footer><span>НК ACTIVITY</span><span>PRIVATE ADMIN AREA · 0.4.0</span></footer>
   </main>
 </body>
 </html>
