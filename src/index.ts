@@ -357,15 +357,17 @@ async function handleShopCommand(env: Env, update: TelegramUpdate, command: stri
       return true;
     }
     const parts = args.split("|").map(part => part.trim());
-    const [category, title, rawPrice, description = ""] = parts;
+    const [category, title, rawPrice, description = "", rawQuantity = ""] = parts;
     const price = Number(rawPrice);
-    if (!category || !title || title.length > 80 || !Number.isSafeInteger(price) || price < 1) {
-      await sendTelegramMessage(env, m.chat.id, "Формат: /addreward категория | название | цена_XP | описание");
+    const quantity = rawQuantity ? Number(rawQuantity) : null;
+    if (!category || !title || title.length > 80 || !Number.isSafeInteger(price) || price < 1 ||
+      (quantity !== null && (!Number.isSafeInteger(quantity) || quantity < 1))) {
+      await sendTelegramMessage(env, m.chat.id, "Формат: /addreward категория | название | цена_XP | описание | количество (необязательно)");
       return true;
     }
     const result = await env.DB.prepare(`INSERT INTO rewards
       (title, description, category, price_xp, quantity, is_active)
-      VALUES (?, ?, ?, ?, NULL, 1)`).bind(title, description, category, price).run();
+      VALUES (?, ?, ?, ?, ?, 1)`).bind(title, description, category, price, quantity).run();
     await logAdminAction(env, telegramId, "reward_created", String(result.meta.last_row_id ?? ""), { title, category, price }, now);
     await sendTelegramMessage(env, m.chat.id, `Товар добавлен. ID: ${result.meta.last_row_id}`);
     return true;
@@ -539,7 +541,7 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
 
   if (command === "/start" || command === "/help") {
     await sendTelegramMessage(env, m.chat.id,
-      "НК Activity — система активности сообщества.\n/profile — профиль и XP.\n/achievements — твои достижения.\n/daily — ежедневная награда.\n/shop — магазин.\n/buy ID — купить товар.\n/myorders — мои покупки.\n/pending — заявки на проверку (админ).\n/adminstats — статистика (админ).\n/penalty ID сумма | причина — предложить штраф (админ).\n/pendingpenalties — очередь штрафов (админ).\n/approvepenalty ID или /rejectpenalty ID (админ).\n/addreward категория | название | цена | описание (админ).\n/approve ID или /reject ID (админ).\n/top — общий топ-10.\n/topseason — рейтинг текущего сезона.");
+      "НК Activity — система активности сообщества.\n/profile — профиль и XP.\n/achievements — твои достижения.\n/daily — ежедневная награда.\n/shop — магазин.\n/buy ID — купить товар.\n/myorders — мои покупки.\n/pending — заявки на проверку (админ).\n/adminstats — статистика (админ).\n/penalty ID сумма | причина — предложить штраф (админ).\n/pendingpenalties — очередь штрафов (админ).\n/approvepenalty ID или /rejectpenalty ID (админ).\n/addreward категория | название | цена | описание | количество (админ).\n/approve ID или /reject ID (админ).\n/top — общий топ-10.\n/topseason — рейтинг текущего сезона.");
     return;
   }
   if (command === "/daily") {
