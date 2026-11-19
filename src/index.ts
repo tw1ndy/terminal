@@ -209,6 +209,26 @@ async function handleShopCommand(env: Env, update: TelegramUpdate, command: stri
     return true;
   }
 
+  if (command === "/adminstats") {
+    if (!(await isAdmin(env, telegramId))) {
+      await sendTelegramMessage(env, m.chat.id, "Недостаточно прав.");
+      return true;
+    }
+    const day = moscowDay(now);
+    const [users, messages, xp, pending, season] = await Promise.all([
+      env.DB.prepare("SELECT COUNT(*) AS total FROM users WHERE is_active = 1").first<{ total: number }>(),
+      env.DB.prepare("SELECT COUNT(*) AS total FROM message_events WHERE event_day = ?").bind(day).first<{ total: number }>(),
+      env.DB.prepare("SELECT COALESCE(SUM(lifetime_xp), 0) AS total FROM xp_wallets").first<{ total: number }>(),
+      env.DB.prepare("SELECT COUNT(*) AS total FROM reward_purchases WHERE status = 'pending'").first<{ total: number }>(),
+      env.DB.prepare("SELECT title, ends_at FROM seasons WHERE status = 'active' ORDER BY id DESC LIMIT 1")
+        .first<{ title: string; ends_at: number }>()
+    ]);
+    const seasonEnd = season ? new Date(season.ends_at * 1000).toLocaleDateString("ru-RU", { timeZone: "Europe/Moscow" }) : "не создан";
+    await sendTelegramMessage(env, m.chat.id,
+      `Статистика НК Activity\\nУчастников: ${users?.total ?? 0}\\nСообщений сегодня: ${messages?.total ?? 0}\\nLifetime XP в системе: ${xp?.total ?? 0}\\nОжидают покупки: ${pending?.total ?? 0}\\nСезон: ${season?.title ?? "—"} (до ${seasonEnd})`);
+    return true;
+  }
+
   if (command === "/pending") {
     if (!(await isAdmin(env, telegramId))) {
       await sendTelegramMessage(env, m.chat.id, "Недостаточно прав.");
@@ -408,7 +428,7 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
 
   if (command === "/start" || command === "/help") {
     await sendTelegramMessage(env, m.chat.id,
-      "НК Activity — система активности сообщества.\n/profile — профиль и XP.\n/achievements — твои достижения.\n/daily — ежедневная награда.\n/shop — магазин.\n/buy ID — купить товар.\n/myorders — мои покупки.\n/pending — заявки на проверку (админ).\n/top — общий топ-10.\n/topseason — рейтинг текущего сезона.");
+      "НК Activity — система активности сообщества.\n/profile — профиль и XP.\n/achievements — твои достижения.\n/daily — ежедневная награда.\n/shop — магазин.\n/buy ID — купить товар.\n/myorders — мои покупки.\n/pending — заявки на проверку (админ).\n/adminstats — статистика (админ).\n/top — общий топ-10.\n/topseason — рейтинг текущего сезона.");
     return;
   }
   if (command === "/daily") {
