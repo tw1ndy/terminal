@@ -655,7 +655,7 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
 
   if (command === "/start" || command === "/help") {
     await sendTelegramMessage(env, m.chat.id,
-      "НК Activity — система активности сообщества.\n/profile — профиль и XP.\n/achievements — твои достижения.\n/daily — ежедневная награда.\n/shop — магазин.\n/buy ID — купить товар.\n/myorders — мои покупки.\n/pending — заявки на проверку (админ).\n/adminstats — статистика (админ).\n/penalty ID сумма | причина — предложить штраф (админ).\n/pendingpenalties — очередь штрафов (админ).\n/approvepenalty ID или /rejectpenalty ID (админ).\n/addreward категория | название | цена | описание | количество (админ).\n/approve ID или /reject ID (админ).\n/top — общий топ-10.\n/topseason — рейтинг текущего сезона.\n/myrank — твоё место в рейтингах.\n/adminpanel — открыть веб-панель (админ).");
+      "НК Activity — система активности сообщества.\n/profile — профиль и XP.\n/achievements — твои достижения.\n/daily — ежедневная награда.\n/shop — магазин.\n/buy ID — купить товар.\n/myorders — мои покупки.\n/pending — заявки на проверку (админ).\n/adminstats — статистика (админ).\n/penalty ID сумма | причина — предложить штраф (админ).\n/pendingpenalties — очередь штрафов (админ).\n/approvepenalty ID или /rejectpenalty ID (админ).\n/addreward категория | название | цена | описание | количество (админ).\n/approve ID или /reject ID (админ).\n/top — общий топ-10.\n/topseason — рейтинг сезона.\n/topday, /topweek, /topmonth — рейтинги за периоды.\n/topachievements, /topstreaks — рейтинги достижений и серий.\n/myrank — твоё место в рейтингах.\n/adminpanel — веб-панель (админ).");
     return;
   }
   if (command === "/daily") {
@@ -736,7 +736,7 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
       title = command === "/topday" ? "Топ за сегодня" : command === "/topweek" ? "Топ за неделю" : "Топ за месяц";
       const query = await env.DB.prepare(`SELECT u.first_name, u.username, SUM(x.amount) AS value, u.joined_at
         FROM xp_transactions x JOIN users u ON u.telegram_id = x.telegram_id
-        WHERE x.amount > 0 AND x.created_at >= ?
+        WHERE x.amount > 0 AND x.transaction_type != 'purchase_refund' AND x.created_at >= ?
         GROUP BY x.telegram_id ORDER BY value DESC, u.joined_at ASC LIMIT 10`).bind(since).all<{
           first_name: string; username: string | null; value: number; joined_at: number;
         }>();
@@ -769,7 +769,7 @@ async function handleCommand(env: Env, update: TelegramUpdate): Promise<void> {
     }
     const lines = (result.results ?? []).map((row, i) =>
       `${i + 1}. ${row.first_name || (row.username ? `@${row.username}` : "Участник")} — ${row.value} ${suffix}`);
-    await sendTelegramMessage(env, m.chat.id, lines.length ? `${title}\\n${lines.join("\\n")}` : "Рейтинг пока пуст.");
+    await sendTelegramMessage(env, m.chat.id, lines.length ? `${title}\n${lines.join("\n")}` : "Рейтинг пока пуст.");
   }
 }
 
