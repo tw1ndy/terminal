@@ -64,6 +64,12 @@
 
 Текущий статус: база `nk-activity-db` создана, её ID прописан в конфигурации. CI-проверки проходят. Миграции ещё не применены, Worker ещё не развёрнут, секреты и webhook ещё не настроены.
 
+Для запуска с телефона подготовлен ручной GitHub Actions workflow: `.github/workflows/deploy.yml`. Он применяет D1-миграции и развёртывает Worker после добавления двух GitHub Secrets: `CLOUDFLARE_API_TOKEN` и `CLOUDFLARE_ACCOUNT_ID`.
+
+Перед запуском workflow создай отдельный пустой Worker с именем `nk-activity` в Cloudflare. Затем создай API Token, ограниченный аккаунтом и правами на редактирование только Worker `nk-activity`, а также D1-базы `nk-activity-db`. Wrangler в CI использует `CLOUDFLARE_API_TOKEN` и `CLOUDFLARE_ACCOUNT_ID`; Cloudflare описывает этот способ в [документации GitHub Actions](https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/) и [документации ролей и разрешений](https://developers.cloudflare.com/workers/authorization/).
+
+Добавь оба значения в GitHub: Settings → Secrets and variables → Actions → New repository secret. Не отправляй API Token в чат и не записывай его в файлы репозитория. После этого запусти Actions → Deploy НК Activity → Run workflow. Секреты Telegram и webhook на этом этапе ещё не настраиваются.
+
 1. Отдельная D1-база `nk-activity-db` уже создана. Её Database ID уже прописан в `wrangler.toml`; повторно создавать базу не нужно.
 2. В локальном терминале выполнить `npx wrangler login`, затем `npm run db:remote` для применения миграций. Это пока требует авторизации Cloudflare.
 3. Выполнить `npm run deploy` для создания/обновления отдельного Worker `nk-activity` из этого репозитория.
