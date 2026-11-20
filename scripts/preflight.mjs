@@ -11,18 +11,18 @@ const capture = (pattern, label) => {
   return match[1];
 };
 
-const workerName = capture(/^name\\s*=\\s*"([^"]+)"/m, "Worker name");
-const main = capture(/^main\\s*=\\s*"([^"]+)"/m, "Worker entrypoint");
-const compatibilityDate = capture(/^compatibility_date\\s*=\\s*"([^"]+)"/m, "compatibility_date");
-const databaseName = capture(/^database_name\\s*=\\s*"([^"]+)"/m, "D1 database name");
-const databaseId = capture(/^database_id\\s*=\\s*"([^"]+)"/m, "D1 database ID");
-const migrationsDir = capture(/^migrations_dir\\s*=\\s*"([^"]+)"/m, "D1 migrations directory");
-const assetsDir = capture(/^directory\\s*=\\s*"([^"]+)"/m, "Static assets directory");
+const workerName = capture(/^name\s*=\s*"([^"]+)"/m, "Worker name");
+const main = capture(/^main\s*=\s*"([^"]+)"/m, "Worker entrypoint");
+const compatibilityDate = capture(/^compatibility_date\s*=\s*"([^"]+)"/m, "compatibility_date");
+const databaseName = capture(/^database_name\s*=\s*"([^"]+)"/m, "D1 database name");
+const databaseId = capture(/^database_id\s*=\s*"([^"]+)"/m, "D1 database ID");
+const migrationsDir = capture(/^migrations_dir\s*=\s*"([^"]+)"/m, "D1 migrations directory");
+const assetsDir = capture(/^directory\s*=\s*"([^"]+)"/m, "Static assets directory");
 
 if (workerName !== "nk-activity") fail("Worker name must remain nk-activity.");
 if (databaseName !== "nk-activity-db") fail("D1 must use the dedicated nk-activity-db database.");
 if (main !== "src/index.ts") fail("Unexpected Worker entrypoint.");
-if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(compatibilityDate ?? "")) fail("Invalid compatibility_date.");
+if (!/^\d{4}-\d{2}-\d{2}$/.test(compatibilityDate ?? "")) fail("Invalid compatibility_date.");
 if (migrationsDir !== "migrations") fail("Migrations directory must be migrations.");
 if (assetsDir !== "./web") fail("Static assets must be served from ./web.");
 if (databaseId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(databaseId)) {
@@ -43,7 +43,7 @@ for (const path of [main, migrationsDir, assetsDir]) {
 }
 try {
   const ignore = await readFile(new URL("../.gitignore", import.meta.url), "utf8");
-  if (!ignore.split(/\\r?\\n/).includes(".dev.vars")) fail(".dev.vars must be ignored by Git.");
+  if (!ignore.split(/\r?\n/).includes(".dev.vars")) fail(".dev.vars must be ignored by Git.");
 } catch { fail(".gitignore is missing."); }
 
 if (process.exitCode) process.exit(process.exitCode);
