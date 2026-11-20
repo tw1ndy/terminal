@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 
 const script = new URL("./preflight.mjs", import.meta.url);
 const config = await readFile(new URL("../wrangler.toml", import.meta.url), "utf8");
-const match = config.match(/^database_id\\s*=\\s*"([^"]+)"/m);
+const match = config.match(/^database_id\s*=\s*"([^"]+)"/m);
 const databaseId = match?.[1];
 const isRealId = Boolean(databaseId)
   && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(databaseId)
