@@ -44,11 +44,9 @@
 
 ## Локальная разработка
 1. Установить Node.js 22.12+ и выполнить `npm install`.
-2. Выполнить `npm install`.
-3. Выполнить `npm run db:create` после входа в Cloudflare через Wrangler; команда создаст отдельную D1-базу `nk-activity-db` и выведет её Database ID.
-4. В `wrangler.toml` заменить `REPLACE_WITH_NEW_D1_DATABASE_ID` на ID именно этой новой базы.
-5. Скопировать `.dev.vars.example` в `.dev.vars` и заполнить локальные секреты.
-6. Выполнить `npm run db:local`, затем `npm run dev`.
+2. Скопировать `.dev.vars.example` в `.dev.vars` и заполнить локальные секреты.
+3. Выполнить `npm run db:local`, затем `npm run dev`.
+4. Для удалённой базы сначала авторизоваться через `npx wrangler login`; её ID уже указан в `wrangler.toml`.
 
 ## Секреты
 Не добавляйте Telegram Bot Token, webhook secret или admin secret в Git. Для production задавайте их через Worker Secrets.
@@ -64,17 +62,18 @@
 
 ## Подключение Cloudflare (перед первым запуском)
 
-1. В локальном терминале выполнить `npx wrangler login`, затем `npm run db:create`. Команда создаст отдельную D1-базу `nk-activity-db` и выведет Database ID.
-2. Скопировать Database ID из вывода команды и заменить `00000000-0000-0000-0000-000000000000` в `wrangler.toml` на реальный UUID.
-3. Создать отдельный Worker `nk-activity` и подключить этот репозиторий через Workers Builds либо выполнить деплой Wrangler из локальной копии.
+Текущий статус: база `nk-activity-db` создана, её ID прописан в конфигурации. CI-проверки проходят. Миграции ещё не применены, Worker ещё не развёрнут, секреты и webhook ещё не настроены.
+
+1. Отдельная D1-база `nk-activity-db` уже создана. Её Database ID уже прописан в `wrangler.toml`; повторно создавать базу не нужно.
+2. В локальном терминале выполнить `npx wrangler login`, затем `npm run db:remote` для применения миграций. Это пока требует авторизации Cloudflare.
+3. Выполнить `npm run deploy` для создания/обновления отдельного Worker `nk-activity` из этого репозитория.
 4. В BotFather отключить Privacy Mode для `@AKTIVInkBot` (или выдать боту права администратора в группе), чтобы Telegram передавал обычные сообщения для начисления XP. Самому владельцу заранее открыть бота и отправить `/start`, чтобы получать личные уведомления о покупках.
 5. В настройках Worker добавить Secrets:
    - `TELEGRAM_BOT_TOKEN` — новый токен @AKTIVInkBot (не коммитить и не отправлять в чат).
    - `TELEGRAM_WEBHOOK_SECRET` — случайная длинная строка для проверки Telegram webhook.
    - `OWNER_TELEGRAM_ID` — `891419692`.
 6. Обычные переменные Worker: `TARGET_CHAT_ID=-1004353159956`, `APP_TIMEZONE=Europe/Moscow`, `APP_ENV=production`, `WEB_ADMIN_URL=https://<worker-domain>/admin`.
-7. Применить миграции к удалённой D1: `npx wrangler d1 migrations apply nk-activity-db --remote`.
-8. После успешного деплоя установить webhook Telegram на URL `https://nk-activity.<твой-subdomain>.workers.dev/webhook`, передав тот же `TELEGRAM_WEBHOOK_SECRET` как `secret_token`.
+7. После успешного деплоя установить webhook Telegram на URL `https://nk-activity.<твой-subdomain>.workers.dev/webhook`, передав тот же `TELEGRAM_WEBHOOK_SECRET` как `secret_token`.
 9. Проверить `/health`, затем отправить `/start`, `/profile`, `/daily`, `/achievements`, `/shop`, `/top` и `/topseason` в тестовой группе.
 
 **Не подключать основную группу до проверки начисления XP, дневного лимита и повторной доставки webhook.** Токены и секреты не добавлять в GitHub.
