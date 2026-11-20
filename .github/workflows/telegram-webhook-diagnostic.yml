@@ -1,0 +1,40 @@
+name: Telegram Webhook Diagnostics
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Telegram webhook status
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TELEGRAM_BOT_TOKEN:-}" ]; then
+            echo "TELEGRAM_BOT_TOKEN secret is missing"
+            exit 1
+          fi
+          response="$(curl --silent --show-error --fail "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getWebhookInfo")"
+          printf '%s' "$response" | node -e '
+            let s = "";
+            process.stdin.on("data", d => s += d);
+            process.stdin.on("end", () => {
+              const r = JSON.parse(s);
+              if (!r.ok) {
+                console.log("Telegram API returned ok=false");
+                process.exit(1);
+              }
+              const x = r.result || {};
+              console.log(JSON.stringify({
+                url: x.url || "",
+                has_custom_certificate: !!x.has_custom_certificate,
+                pending_update_count: x.pending_update_count ?? null,
+                last_error_date: x.last_error_date ?? null,
+                last_error_message: x.last_error_message ?? null,
+                max_connections: x.max_connections ?? null,
+                allowed_updates: x.allowed_updates ?? null
+              }, null, 2));
+            });
+          '
