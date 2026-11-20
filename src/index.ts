@@ -1078,12 +1078,12 @@ app.post("/api/admin/members/:id/prefix", async c => {
   const actorId = await authorizeWebAdmin(c, "members.manage");
   if (!actorId) return c.json({ error: "unauthorized" }, 401);
   const telegramId = c.req.param("id");
-  if (!/^\\d{5,20}$/.test(telegramId)) return c.json({ error: "invalid_telegram_id" }, 400);
+  if (!/^\d{5,20}$/.test(telegramId)) return c.json({ error: "invalid_telegram_id" }, 400);
   let body: { title?: unknown };
   try { body = await c.req.json(); } catch { return c.json({ error: "invalid_json" }, 400); }
   if (typeof body.title !== "string") return c.json({ error: "invalid_prefix" }, 400);
   const title = body.title.trim();
-  if (title.length > 48 || /[\\r\\n\\u0000-\\u001f]/.test(title)) {
+  if (title.length > 48 || /[\r\n\u0000-\u001f]/.test(title)) {
     return c.json({ error: "invalid_prefix" }, 400);
   }
   const member = await c.env.DB.prepare("SELECT telegram_id FROM users WHERE telegram_id = ?")
