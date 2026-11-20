@@ -11,7 +11,9 @@
     "db:remote": "node scripts/preflight.mjs --production && wrangler d1 migrations apply nk-activity-db --remote",
     "test": "vitest run",
     "webhook:set": "node scripts/set-webhook.mjs",
-    "preflight": "node scripts/preflight.mjs --ci"
+    "preflight": "node scripts/preflight.mjs --ci",
+    "db:create": "wrangler d1 create nk-activity-db",
+    "db:info": "wrangler d1 info nk-activity-db"
   },
   "dependencies": {
     "hono": "^4.6.12"
