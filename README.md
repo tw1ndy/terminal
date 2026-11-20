@@ -74,7 +74,7 @@
    - `OWNER_TELEGRAM_ID` — `891419692`.
 6. Обычные переменные Worker: `TARGET_CHAT_ID=-1004353159956`, `APP_TIMEZONE=Europe/Moscow`, `APP_ENV=production`, `WEB_ADMIN_URL=https://<worker-domain>/admin`.
 7. После успешного деплоя установить webhook Telegram на URL `https://nk-activity.<твой-subdomain>.workers.dev/webhook`, передав тот же `TELEGRAM_WEBHOOK_SECRET` как `secret_token`.
-9. Проверить `/health`, затем отправить `/start`, `/profile`, `/daily`, `/achievements`, `/shop`, `/top` и `/topseason` в тестовой группе.
+8. Проверить `/health`, затем отправить `/start`, `/profile`, `/daily`, `/achievements`, `/shop`, `/top` и `/topseason` в тестовой группе.
 
 **Не подключать основную группу до проверки начисления XP, дневного лимита и повторной доставки webhook.** Токены и секреты не добавлять в GitHub.
 
