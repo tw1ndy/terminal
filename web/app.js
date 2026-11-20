@@ -83,8 +83,45 @@
       main.append(node("div", "item-meta", "Lifetime: " + number(row.lifetime_xp) + " XP · Доступно: " + number(row.available_xp) + " XP · Сезон: " + number(row.season_xp) + " XP"));
       main.append(node("div", "item-meta", "Сообщений: " + number(row.message_count) + " · Серия: " + number(row.current_streak) + " дн. · Рекорд: " + number(row.longest_streak) + " дн."));
       item.append(main);
+      if (window.__membersManage) {
+        const controls = node("div", "prefix-controls");
+        const input = node("input", "prefix-input");
+        input.type = "text";
+        input.maxLength = 48;
+        input.placeholder = "Название префикса";
+        input.value = row.prefix_title || "";
+        const save = node("button", "", "Выдать");
+        save.type = "button";
+        save.addEventListener("click", () => updatePrefix(row.telegram_id, input.value, save));
+        const remove = node("button", "remove-prefix", "Снять");
+        remove.type = "button";
+        remove.addEventListener("click", () => updatePrefix(row.telegram_id, "", remove));
+        controls.append(input, save, remove);
+        item.append(controls);
+      }
       target.append(item);
     });
+  }
+  async function updatePrefix(telegramId, title, button) {
+    const cleanTitle = String(title || "").trim();
+    if (cleanTitle.length > 48) { setNotice("Префикс должен быть не длиннее 48 символов.", "error"); return; }
+    if (!confirm(cleanTitle ? "Выдать префикс «" + cleanTitle + "» участнику " + telegramId + "?" : "Снять вручную назначенные префиксы у участника " + telegramId + "?")) return;
+    const oldText = button.textContent;
+    button.disabled = true;
+    button.textContent = "…";
+    try {
+      await api("/api/admin/members/" + encodeURIComponent(telegramId) + "/prefix", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: cleanTitle })
+      });
+      setNotice(cleanTitle ? "Префикс выдан." : "Ручной префикс снят.", "success");
+      await loadMembers();
+    } catch (error) {
+      setNotice(error.message, "error");
+      button.disabled = false;
+      button.textContent = oldText;
+    }
   }
   async function loadMembers(query = $("memberQuery").value.trim()) {
     try {
@@ -104,6 +141,7 @@
     $("penaltyCount").textContent = number(data.penalties.length);
     $("settingsPanel").hidden = !data.permissions.settingsManage;
     $("membersPanel").hidden = !data.permissions.membersView;
+    window.__membersManage = Boolean(data.permissions.membersManage);
     if (data.permissions.membersView) loadMembers();
     $("seasonTitle").textContent = data.season?.title || "Активный сезон не создан";
     $("seasonDates").textContent = data.season ? date(data.season.starts_at) + " — " + date(data.season.ends_at) : "—";
