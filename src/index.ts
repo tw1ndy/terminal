@@ -1042,7 +1042,8 @@ app.get("/api/admin/dashboard", async c => {
       penaltyReview: await hasPermission(c.env, actorId, "penalty.review"),
       antifraudReview: await hasPermission(c.env, actorId, "antifraud.review"),
       settingsManage: await hasPermission(c.env, actorId, "settings.manage"),
-      membersView: await hasPermission(c.env, actorId, "members.view")
+      membersView: await hasPermission(c.env, actorId, "members.view"),
+      membersManage: await hasPermission(c.env, actorId, "members.manage")
     }
   });
 });
@@ -1053,7 +1054,9 @@ app.get("/api/admin/members", async c => {
   const query = (c.req.query("q") ?? "").trim().slice(0, 64);
   const result = await c.env.DB.prepare(`SELECT u.telegram_id, u.username, u.first_name, u.last_name,
       u.joined_at, u.last_seen_at, u.is_active, s.message_count, s.current_streak, s.longest_streak,
-      w.lifetime_xp, w.available_xp, w.season_xp
+      w.lifetime_xp, w.available_xp, w.season_xp,
+      (SELECT title FROM member_rewards mr WHERE mr.telegram_id = u.telegram_id AND mr.reward_type = 'prefix'
+        ORDER BY mr.created_at DESC LIMIT 1) AS prefix_title
     FROM users u
     LEFT JOIN user_stats s ON s.telegram_id = u.telegram_id
     LEFT JOIN xp_wallets w ON w.telegram_id = u.telegram_id
@@ -1069,6 +1072,38 @@ app.get("/api/admin/members", async c => {
       available_xp: number | null; season_xp: number | null;
     }>();
   return c.json({ ok: true, members: result.results ?? [], query });
+});
+
+app.post("/api/admin/members/:id/prefix", async c => {
+  const actorId = await authorizeWebAdmin(c, "members.manage");
+  if (!actorId) return c.json({ error: "unauthorized" }, 401);
+  const telegramId = c.req.param("id");
+  if (!/^\\d{5,20}$/.test(telegramId)) return c.json({ error: "invalid_telegram_id" }, 400);
+  let body: { title?: unknown };
+  try { body = await c.req.json(); } catch { return c.json({ error: "invalid_json" }, 400); }
+  if (typeof body.title !== "string") return c.json({ error: "invalid_prefix" }, 400);
+  const title = body.title.trim();
+  if (title.length > 48 || /[\\r\\n\\u0000-\\u001f]/.test(title)) {
+    return c.json({ error: "invalid_prefix" }, 400);
+  }
+  const member = await c.env.DB.prepare("SELECT telegram_id FROM users WHERE telegram_id = ?")
+    .bind(telegramId).first<{ telegram_id: string }>();
+  if (!member) return c.json({ error: "member_not_found" }, 404);
+  const now = Math.floor(Date.now() / 1000);
+  if (title) {
+    await c.env.DB.prepare(`INSERT INTO member_rewards
+      (telegram_id, reward_type, title, period_key, created_at)
+      VALUES (?, 'prefix', ?, ?, ?)`)
+      .bind(telegramId, title, `manual:${now}`, now).run();
+    await logAdminAction(c.env, actorId, "member_prefix_assigned", telegramId, { title }, now);
+  } else {
+    const result = await c.env.DB.prepare(`DELETE FROM member_rewards
+      WHERE telegram_id = ? AND reward_type = 'prefix' AND period_key LIKE 'manual:%'`)
+      .bind(telegramId).run();
+    await logAdminAction(c.env, actorId, "member_prefix_removed", telegramId,
+      { removed: result.meta.changes ?? 0 }, now);
+  }
+  return c.json({ ok: true });
 });
 
 app.post("/api/admin/settings", async c => {
