@@ -30,6 +30,14 @@ missing = required - tables
 if missing:
     raise SystemExit("Missing expected tables: " + ", ".join(sorted(missing)))
 
+indexes = {
+    row[0] for row in db.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'index'"
+    )
+}
+if "idx_message_events_user_created_at" not in indexes:
+    raise SystemExit("Missing recent-message anti-fraud index")
+
 print(f"Validated {len(files)} migrations against SQLite.")
 
 # Exercise the SQL idempotency pattern used by D1 batches: INSERT OR IGNORE,
