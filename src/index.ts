@@ -180,9 +180,11 @@ async function awardDailyXp(
       INSERT OR IGNORE INTO daily_xp_ledger
         (telegram_id, reward_day, source_type, source_key, amount, created_at)
       SELECT ?, ?, ?, ?, MIN(?, MAX(0, ? - COALESCE(
-        (SELECT SUM(amount) FROM daily_xp_ledger WHERE telegram_id = ? AND reward_day = ?), 0
+        (SELECT daily_xp_total FROM xp_wallets WHERE telegram_id = ? AND daily_xp_day = ?),
+        (SELECT SUM(amount) FROM daily_xp_ledger WHERE telegram_id = ? AND reward_day = ?),
+        0
       ))), ?
-    `).bind(telegramId, day, sourceType, sourceKey, requestedAmount, cap, telegramId, day, createdAt),
+    `).bind(telegramId, day, sourceType, sourceKey, requestedAmount, cap, telegramId, day, telegramId, day, createdAt),
     env.DB.prepare(`
       INSERT OR IGNORE INTO xp_transactions
         (telegram_id, amount, transaction_type, source_id, note, created_at)
@@ -194,10 +196,17 @@ async function awardDailyXp(
       UPDATE xp_wallets SET
         lifetime_xp = lifetime_xp + (SELECT amount FROM xp_transactions WHERE telegram_id = ? AND transaction_type = ? AND source_id = ?),
         available_xp = available_xp + (SELECT amount FROM xp_transactions WHERE telegram_id = ? AND transaction_type = ? AND source_id = ?),
-        season_xp = season_xp + (SELECT amount FROM xp_transactions WHERE telegram_id = ? AND transaction_type = ? AND source_id = ?)
+        season_xp = season_xp + (SELECT amount FROM xp_transactions WHERE telegram_id = ? AND transaction_type = ? AND source_id = ?),
+        daily_xp_day = CASE WHEN daily_xp_day IS NULL OR daily_xp_day <= ? THEN ? ELSE daily_xp_day END,
+        daily_xp_total = CASE
+          WHEN daily_xp_day > ? THEN daily_xp_total
+          WHEN daily_xp_day = ? THEN daily_xp_total + (SELECT amount FROM xp_transactions WHERE telegram_id = ? AND transaction_type = ? AND source_id = ?)
+          ELSE (SELECT amount FROM xp_transactions WHERE telegram_id = ? AND transaction_type = ? AND source_id = ?)
+        END
       WHERE telegram_id = ? AND changes() = 1
     `).bind(telegramId, sourceType, sourceKey, telegramId, sourceType, sourceKey,
-      telegramId, sourceType, sourceKey, telegramId),
+      telegramId, sourceType, sourceKey, day, day, day, day,
+      telegramId, sourceType, sourceKey, telegramId, sourceType, sourceKey, telegramId),
     env.DB.prepare(`
       INSERT INTO season_stats (season_id, telegram_id, season_xp)
       SELECT id, ?, (SELECT amount FROM xp_transactions WHERE telegram_id = ? AND transaction_type = ? AND source_id = ?)
@@ -225,13 +234,14 @@ async function detectFlood(
   env: Env, telegramId: string, chatId: number, now: number, messageHash: string | null
 ): Promise<void> {
   const recent = await env.DB.prepare(`SELECT COUNT(*) AS count FROM message_events
-    WHERE telegram_id = ? AND created_at >= ?`).bind(telegramId, now - 10).first<{ count: number }>();
+    WHERE telegram_id = ? AND event_day >= ? AND created_at >= ?`)
+    .bind(telegramId, moscowDay(now - 10), now - 10).first<{ count: number }>();
   let eventType: "flood" | "repeated_text" | null = (recent?.count ?? 0) >= 8 ? "flood" : null;
   let repeatedCount = 0;
   if (!eventType && messageHash) {
     const repeated = await env.DB.prepare(`SELECT COUNT(*) AS count FROM message_events
-      WHERE telegram_id = ? AND message_hash = ? AND created_at >= ?`)
-      .bind(telegramId, messageHash, now - 60).first<{ count: number }>();
+      WHERE telegram_id = ? AND event_day >= ? AND message_hash = ? AND created_at >= ?`)
+      .bind(telegramId, moscowDay(now - 60), messageHash, now - 60).first<{ count: number }>();
     repeatedCount = repeated?.count ?? 0;
     if (repeatedCount >= 5) eventType = "repeated_text";
   }
