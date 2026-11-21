@@ -145,6 +145,14 @@ def award_daily(source_type: str, source_key: str, requested: int, cap: int, day
         (source_type, source_key),
     )
 
+# Exercise duplicate prevention, the shared daily cap, and reward accounting.
+award_daily("message", "message:1", 3, 200, "2026-11-19")
+award_daily("message", "message:1", 3, 200, "2026-11-19")
+award_daily("daily_activity", "2026-11-19", 15, 200, "2026-11-19")
+award_daily("message_milestone", "50:2026-11-19", 20, 200, "2026-11-19")
+for message_number in range(2, 100):
+    award_daily("message", f"message:{message_number}", 3, 200, "2026-11-19")
+
 daily_total = db.execute(
     "SELECT SUM(amount) FROM daily_xp_ledger WHERE telegram_id = 'daily-test' AND reward_day = '2026-11-19'"
 ).fetchone()[0]
