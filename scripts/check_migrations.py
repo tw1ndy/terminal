@@ -96,10 +96,12 @@ def award_daily(source_type: str, source_key: str, requested: int, cap: int, day
         """INSERT OR IGNORE INTO daily_xp_ledger
            (telegram_id, reward_day, source_type, source_key, amount, created_at)
            SELECT 'daily-test', ?, ?, ?, MIN(?, MAX(0, ? - COALESCE(
+             (SELECT daily_xp_total FROM xp_wallets
+              WHERE telegram_id = 'daily-test' AND daily_xp_day = ?),
              (SELECT SUM(amount) FROM daily_xp_ledger
               WHERE telegram_id = 'daily-test' AND reward_day = ?), 0
            ))), 2""",
-        (day, source_type, source_key, requested, cap, day),
+        (day, source_type, source_key, requested, cap, day, day),
     )
     db.execute(
         """INSERT OR IGNORE INTO xp_transactions
@@ -117,9 +119,21 @@ def award_daily(source_type: str, source_key: str, requested: int, cap: int, day
            available_xp = available_xp + (SELECT amount FROM xp_transactions
              WHERE telegram_id = 'daily-test' AND transaction_type = ? AND source_id = ?),
            season_xp = season_xp + (SELECT amount FROM xp_transactions
-             WHERE telegram_id = 'daily-test' AND transaction_type = ? AND source_id = ?)
+             WHERE telegram_id = 'daily-test' AND transaction_type = ? AND source_id = ?),
+           daily_xp_day = CASE
+             WHEN daily_xp_day IS NULL OR daily_xp_day <= ? THEN ?
+             ELSE daily_xp_day
+           END,
+           daily_xp_total = CASE
+             WHEN daily_xp_day > ? THEN daily_xp_total
+             WHEN daily_xp_day = ? THEN daily_xp_total + (SELECT amount FROM xp_transactions
+               WHERE telegram_id = 'daily-test' AND transaction_type = ? AND source_id = ?)
+             ELSE (SELECT amount FROM xp_transactions
+               WHERE telegram_id = 'daily-test' AND transaction_type = ? AND source_id = ?)
+           END
            WHERE telegram_id = 'daily-test' AND changes() = 1""",
-        (source_type, source_key, source_type, source_key, source_type, source_key),
+        (source_type, source_key, source_type, source_key, source_type, source_key,
+         day, day, day, day, source_type, source_key, source_type, source_key),
     )
     db.execute(
         """INSERT INTO season_stats (season_id, telegram_id, season_xp)
@@ -130,13 +144,6 @@ def award_daily(source_type: str, source_key: str, requested: int, cap: int, day
              SET season_xp = season_xp + excluded.season_xp""",
         (source_type, source_key),
     )
-
-award_daily("message", "message:1", 3, 200, "2026-11-19")
-award_daily("message", "message:1", 3, 200, "2026-11-19")
-award_daily("daily_activity", "2026-11-19", 15, 200, "2026-11-19")
-award_daily("message_milestone", "50:2026-11-19", 20, 200, "2026-11-19")
-for message_number in range(2, 100):
-    award_daily("message", f"message:{message_number}", 3, 200, "2026-11-19")
 
 daily_total = db.execute(
     "SELECT SUM(amount) FROM daily_xp_ledger WHERE telegram_id = 'daily-test' AND reward_day = '2026-11-19'"
@@ -151,7 +158,22 @@ if daily_total != 200 or daily_wallet != (200, 200, 200) or daily_season != 200:
     raise SystemExit(
         f"Daily XP cap/accounting failed: ledger={daily_total}, wallet={daily_wallet}, season={daily_season}"
     )
-print("OK shared daily XP cap, duplicate prevention and wallet/season accounting")
+cached = db.execute(
+    "SELECT daily_xp_day, daily_xp_total FROM xp_wallets WHERE telegram_id = 'daily-test'"
+).fetchone()
+if cached != ("2026-11-19", 200):
+    raise SystemExit(f"Daily XP cache failed: {cached}")
+
+# A new day resets the cache; a delayed previous-day event must use its ledger
+# history and must not overwrite the newer day's cached total.
+award_daily("message", "message:next-day", 3, 200, "2026-11-20")
+award_daily("message", "message:late-previous-day", 3, 200, "2026-11-19")
+cached_after_delay = db.execute(
+    "SELECT daily_xp_day, daily_xp_total FROM xp_wallets WHERE telegram_id = 'daily-test'"
+).fetchone()
+if cached_after_delay != ("2026-11-20", 3):
+    raise SystemExit(f"Daily XP rollover/delayed event handling failed: {cached_after_delay}")
+print("OK shared daily XP cap, duplicate prevention, cache rollover and wallet/season accounting")
 
 
 foreign_key_errors = db.execute("PRAGMA foreign_key_check").fetchall()
