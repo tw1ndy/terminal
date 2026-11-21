@@ -18,3 +18,7 @@ WHERE EXISTS (
   WHERE daily_xp_ledger.telegram_id = xp_wallets.telegram_id
     AND daily_xp_ledger.reward_day = date('now', '+3 hours')
 );
+
+-- Support the short recent-message window without scanning a member's full history.
+CREATE INDEX IF NOT EXISTS idx_message_events_user_created_at
+  ON message_events(telegram_id, created_at);
