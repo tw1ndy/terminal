@@ -729,11 +729,30 @@ async function claimDailyReward(env: Env, telegramId: string, now: number): Prom
     .bind(telegramId).first();
   if (!existing) return "Сначала напиши сообщение в основной группе, чтобы создать профиль.";
 
-  const recentClaims = await env.DB.prepare(`SELECT reward_day FROM daily_rewards
-    WHERE telegram_id = ? AND reward_type = 'daily_claim'
-    ORDER BY reward_day DESC LIMIT 10000`).bind(telegramId).all<{ reward_day: string }>();
-  const claimDays = (recentClaims.results ?? []).map(row => row.reward_day);
-  if (claimDays[0] === day) {
+  // Read only today's claim and the uninterrupted streak. The recursive query
+  // stops at the first missing day instead of loading up to 10,000 history rows.
+  const claimState = await env.DB.prepare(`WITH RECURSIVE claim_streak(reward_day, streak) AS (
+      SELECT date(?, '-1 day'), 1
+      WHERE EXISTS (
+        SELECT 1 FROM daily_rewards
+        WHERE telegram_id = ? AND reward_type = 'daily_claim' AND reward_day = date(?, '-1 day')
+      )
+      UNION ALL
+      SELECT date(claim_streak.reward_day, '-1 day'), claim_streak.streak + 1
+      FROM claim_streak
+      WHERE EXISTS (
+        SELECT 1 FROM daily_rewards
+        WHERE telegram_id = ? AND reward_type = 'daily_claim'
+          AND reward_day = date(claim_streak.reward_day, '-1 day')
+      )
+    )
+    SELECT
+      EXISTS (SELECT 1 FROM daily_rewards
+        WHERE telegram_id = ? AND reward_type = 'daily_claim' AND reward_day = ?) AS claimed_today,
+      COALESCE((SELECT MAX(streak) FROM claim_streak), 0) AS consecutive_days`)
+    .bind(day, telegramId, day, telegramId, telegramId, day)
+    .first<{ claimed_today: number; consecutive_days: number }>();
+  if (claimState?.claimed_today) {
     // Recover safely if a previous request stored the claim but was interrupted before XP credit.
     const saved = await env.DB.prepare(`SELECT xp_amount FROM daily_rewards
       WHERE telegram_id = ? AND reward_day = ? AND reward_type = 'daily_claim'`)
@@ -743,7 +762,7 @@ async function claimDailyReward(env: Env, telegramId: string, now: number): Prom
     return recovered > 0 ? `Награда восстановлена: +${recovered} XP.` : "Ежедневная награда уже получена сегодня.";
   }
 
-  const streak = nextDailyClaimStreak(day, claimDays);
+  const streak = (claimState?.consecutive_days ?? 0) + 1;
   const amount = dailyRewardAmount(streak);
   const inserted = await env.DB.prepare(`INSERT OR IGNORE INTO daily_rewards
     (telegram_id, reward_day, reward_type, xp_amount, created_at)
