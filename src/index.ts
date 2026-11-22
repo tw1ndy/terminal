@@ -686,18 +686,21 @@ async function recordGroupMessage(env: Env, update: TelegramUpdate): Promise<voi
         WHEN last_activity_day = ? THEN current_streak
         WHEN last_activity_day = date(?, '-1 day') THEN current_streak + 1
         ELSE 1 END),
-      last_activity_day = ?
+      last_activity_day = ?,
+      daily_message_count = CASE WHEN daily_message_day = ? THEN daily_message_count + 1 ELSE 1 END,
+      daily_message_day = ?
       WHERE telegram_id = ? AND EXISTS (
         SELECT 1 FROM message_events WHERE chat_id = ? AND message_id = ? AND stats_applied = 0
-      )`).bind(day, day, day, day, day, telegramId, chatId, messageId),
+      )`).bind(day, day, day, day, day, day, day, telegramId, chatId, messageId),
     env.DB.prepare(`UPDATE message_events SET
       stats_applied = 1,
       message_count_snapshot = (SELECT message_count FROM user_stats WHERE telegram_id = ?),
-      streak_snapshot = (SELECT current_streak FROM user_stats WHERE telegram_id = ?)
+      streak_snapshot = (SELECT current_streak FROM user_stats WHERE telegram_id = ?),
+      daily_message_count_snapshot = (SELECT daily_message_count FROM user_stats WHERE telegram_id = ?)
       WHERE chat_id = ? AND message_id = ? AND stats_applied = 0 AND changes() = 1`)
-      .bind(telegramId, telegramId, chatId, messageId)
+      .bind(telegramId, telegramId, telegramId, chatId, messageId)
   ]);
-  const eventStats = await env.DB.prepare(`SELECT message_count_snapshot, streak_snapshot
+  const eventStats = await env.DB.prepare(`SELECT message_count_snapshot, streak_snapshot, daily_message_count_snapshot
     FROM message_events WHERE chat_id = ? AND message_id = ?`)
     .bind(chatId, messageId).first<{ message_count_snapshot: number | null; streak_snapshot: number | null }>();
   const count = eventStats?.message_count_snapshot ?? 0;
@@ -718,11 +721,8 @@ async function recordGroupMessage(env: Env, update: TelegramUpdate): Promise<voi
 
   // Daily activity and message-count milestones share the same daily cap.
   await awardDailyXp(env, telegramId, day, "daily_activity", day, 15, "Ежедневная активность", m.date, xpContext);
-  // Milestone rewards stop at 100 messages, so counting beyond that is unnecessary.
-  const dailyCountRow = await env.DB.prepare(
-    "SELECT COUNT(*) AS count FROM (SELECT 1 FROM message_events WHERE telegram_id = ? AND event_day = ? LIMIT 100)"
-  ).bind(telegramId, day).first<{ count: number }>();
-  const dailyCount = dailyCountRow?.count ?? 0;
+  // The daily counter is maintained atomically with user_stats and stored on the event.
+  const dailyCount = Math.min(eventStats?.daily_message_count_snapshot ?? 0, 100);
   const milestones = dailyMessageMilestones(dailyCount);
   for (const milestone of milestones) {
     await awardDailyXp(env, telegramId, day, "message_milestone",
