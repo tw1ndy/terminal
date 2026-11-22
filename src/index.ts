@@ -168,11 +168,12 @@ async function ensureActiveSeason(env: Env, now: number): Promise<void> {
 /** Grants XP once per source and applies the shared daily cap atomically in SQL. */
 async function awardDailyXp(
   env: Env, telegramId: string, day: string, sourceType: string,
-  sourceKey: string, requestedAmount: number, note: string, createdAt: number
+  sourceKey: string, requestedAmount: number, note: string, createdAt: number,
+  context?: { seasonEnsured?: boolean; dailyCap?: number }
 ): Promise<number> {
   if (requestedAmount <= 0) return 0;
-  await ensureActiveSeason(env, createdAt);
-  const cap = await getSetting(env, "daily_xp_cap", DEFAULT_DAILY_CAP);
+  if (!context?.seasonEnsured) await ensureActiveSeason(env, createdAt);
+  const cap = context?.dailyCap ?? await getSetting(env, "daily_xp_cap", DEFAULT_DAILY_CAP);
   // Keep ledger insertion, transaction creation and wallet credit in one D1 batch.
   // The unique transaction key makes retries safe; changes() gates the wallet increment.
   const results = await env.DB.batch([
@@ -703,11 +704,20 @@ async function recordGroupMessage(env: Env, update: TelegramUpdate): Promise<voi
   const streak = eventStats?.streak_snapshot ?? 0;
   await detectFlood(env, telegramId, m.chat.id, m.date, messageHash);
 
-  await awardDailyXp(env, telegramId, day, "message", sourceKey,
-    await getSetting(env, "message_xp", DEFAULT_MESSAGE_XP), "XP за сообщение", m.date);
+  // One Telegram update can award several XP sources. Reuse season/settings reads
+  // across those awards instead of repeating them for every source.
+  await ensureActiveSeason(env, m.date);
+  const [messageXp, dailyXpCap] = await Promise.all([
+    getSetting(env, "message_xp", DEFAULT_MESSAGE_XP),
+    getSetting(env, "daily_xp_cap", DEFAULT_DAILY_CAP)
+  ]);
+  const xpContext = { seasonEnsured: true, dailyCap: dailyXpCap };
 
-  // Daily activity and message-count milestones share the same 200 XP daily cap.
-  await awardDailyXp(env, telegramId, day, "daily_activity", day, 15, "Ежедневная активность", m.date);
+  await awardDailyXp(env, telegramId, day, "message", sourceKey,
+    messageXp, "XP за сообщение", m.date, xpContext);
+
+  // Daily activity and message-count milestones share the same daily cap.
+  await awardDailyXp(env, telegramId, day, "daily_activity", day, 15, "Ежедневная активность", m.date, xpContext);
   // Milestone rewards stop at 100 messages, so counting beyond that is unnecessary.
   const dailyCountRow = await env.DB.prepare(
     "SELECT COUNT(*) AS count FROM (SELECT 1 FROM message_events WHERE telegram_id = ? AND event_day = ? LIMIT 100)"
@@ -716,10 +726,10 @@ async function recordGroupMessage(env: Env, update: TelegramUpdate): Promise<voi
   const milestones = dailyMessageMilestones(dailyCount);
   for (const milestone of milestones) {
     await awardDailyXp(env, telegramId, day, "message_milestone",
-      `${milestone.sourceKey}:${day}`, milestone.amount, milestone.note, m.date);
+      `${milestone.sourceKey}:${day}`, milestone.amount, milestone.note, m.date, xpContext);
   }
-  if (streak === 7) await awardDailyXp(env, telegramId, day, "streak_milestone", `7:${day}`, 50, "Серия 7 дней", m.date);
-  if (streak === 30) await awardDailyXp(env, telegramId, day, "streak_milestone", `30:${day}`, 200, "Серия 30 дней", m.date);
+  if (streak === 7) await awardDailyXp(env, telegramId, day, "streak_milestone", `7:${day}`, 50, "Серия 7 дней", m.date, xpContext);
+  if (streak === 30) await awardDailyXp(env, telegramId, day, "streak_milestone", `30:${day}`, 200, "Серия 30 дней", m.date, xpContext);
 
   if (count === 1) await grantAchievement(env, telegramId, "first_message", m.date);
   if (count >= 100) await grantAchievement(env, telegramId, "messages_100", m.date);
