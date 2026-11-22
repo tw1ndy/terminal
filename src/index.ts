@@ -233,14 +233,20 @@ async function hashMessageText(text: string | undefined): Promise<string | null>
 async function detectFlood(
   env: Env, telegramId: string, chatId: number, now: number, messageHash: string | null
 ): Promise<void> {
-  const recent = await env.DB.prepare(`SELECT COUNT(*) AS count FROM message_events
-    WHERE telegram_id = ? AND event_day >= ? AND created_at >= ?`)
+  // Fraud detection only needs to know whether the threshold (8) was reached.
+  // Limit the inner scan so high-volume users do not cause an unbounded COUNT(*).
+  const recent = await env.DB.prepare(`SELECT COUNT(*) AS count FROM (
+    SELECT 1 FROM message_events
+    WHERE telegram_id = ? AND event_day >= ? AND created_at >= ? LIMIT 8
+  )`)
     .bind(telegramId, moscowDay(now - 10), now - 10).first<{ count: number }>();
   let eventType: "flood" | "repeated_text" | null = (recent?.count ?? 0) >= 8 ? "flood" : null;
   let repeatedCount = 0;
   if (!eventType && messageHash) {
-    const repeated = await env.DB.prepare(`SELECT COUNT(*) AS count FROM message_events
-      WHERE telegram_id = ? AND event_day >= ? AND message_hash = ? AND created_at >= ?`)
+    const repeated = await env.DB.prepare(`SELECT COUNT(*) AS count FROM (
+      SELECT 1 FROM message_events
+      WHERE telegram_id = ? AND event_day >= ? AND message_hash = ? AND created_at >= ? LIMIT 5
+    )`)
       .bind(telegramId, moscowDay(now - 60), messageHash, now - 60).first<{ count: number }>();
     repeatedCount = repeated?.count ?? 0;
     if (repeatedCount >= 5) eventType = "repeated_text";
@@ -702,8 +708,9 @@ async function recordGroupMessage(env: Env, update: TelegramUpdate): Promise<voi
 
   // Daily activity and message-count milestones share the same 200 XP daily cap.
   await awardDailyXp(env, telegramId, day, "daily_activity", day, 15, "Ежедневная активность", m.date);
+  // Milestone rewards stop at 100 messages, so counting beyond that is unnecessary.
   const dailyCountRow = await env.DB.prepare(
-    "SELECT COUNT(*) AS count FROM message_events WHERE telegram_id = ? AND event_day = ?"
+    "SELECT COUNT(*) AS count FROM (SELECT 1 FROM message_events WHERE telegram_id = ? AND event_day = ? LIMIT 100)"
   ).bind(telegramId, day).first<{ count: number }>();
   const dailyCount = dailyCountRow?.count ?? 0;
   const milestones = dailyMessageMilestones(dailyCount);
