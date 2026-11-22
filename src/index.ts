@@ -168,11 +168,12 @@ async function ensureActiveSeason(env: Env, now: number): Promise<void> {
 /** Grants XP once per source and applies the shared daily cap atomically in SQL. */
 async function awardDailyXp(
   env: Env, telegramId: string, day: string, sourceType: string,
-  sourceKey: string, requestedAmount: number, note: string, createdAt: number
+  sourceKey: string, requestedAmount: number, note: string, createdAt: number,
+  context?: { seasonEnsured?: boolean; dailyCap?: number }
 ): Promise<number> {
   if (requestedAmount <= 0) return 0;
-  await ensureActiveSeason(env, createdAt);
-  const cap = await getSetting(env, "daily_xp_cap", DEFAULT_DAILY_CAP);
+  if (!context?.seasonEnsured) await ensureActiveSeason(env, createdAt);
+  const cap = context?.dailyCap ?? await getSetting(env, "daily_xp_cap", DEFAULT_DAILY_CAP);
   // Keep ledger insertion, transaction creation and wallet credit in one D1 batch.
   // The unique transaction key makes retries safe; changes() gates the wallet increment.
   const results = await env.DB.batch([
@@ -233,14 +234,20 @@ async function hashMessageText(text: string | undefined): Promise<string | null>
 async function detectFlood(
   env: Env, telegramId: string, chatId: number, now: number, messageHash: string | null
 ): Promise<void> {
-  const recent = await env.DB.prepare(`SELECT COUNT(*) AS count FROM message_events
-    WHERE telegram_id = ? AND event_day >= ? AND created_at >= ?`)
+  // Fraud detection only needs to know whether the threshold (8) was reached.
+  // Limit the inner scan so high-volume users do not cause an unbounded COUNT(*).
+  const recent = await env.DB.prepare(`SELECT COUNT(*) AS count FROM (
+    SELECT 1 FROM message_events
+    WHERE telegram_id = ? AND event_day >= ? AND created_at >= ? LIMIT 8
+  )`)
     .bind(telegramId, moscowDay(now - 10), now - 10).first<{ count: number }>();
   let eventType: "flood" | "repeated_text" | null = (recent?.count ?? 0) >= 8 ? "flood" : null;
   let repeatedCount = 0;
   if (!eventType && messageHash) {
-    const repeated = await env.DB.prepare(`SELECT COUNT(*) AS count FROM message_events
-      WHERE telegram_id = ? AND event_day >= ? AND message_hash = ? AND created_at >= ?`)
+    const repeated = await env.DB.prepare(`SELECT COUNT(*) AS count FROM (
+      SELECT 1 FROM message_events
+      WHERE telegram_id = ? AND event_day >= ? AND message_hash = ? AND created_at >= ? LIMIT 5
+    )`)
       .bind(telegramId, moscowDay(now - 60), messageHash, now - 60).first<{ count: number }>();
     repeatedCount = repeated?.count ?? 0;
     if (repeatedCount >= 5) eventType = "repeated_text";
@@ -697,22 +704,32 @@ async function recordGroupMessage(env: Env, update: TelegramUpdate): Promise<voi
   const streak = eventStats?.streak_snapshot ?? 0;
   await detectFlood(env, telegramId, m.chat.id, m.date, messageHash);
 
-  await awardDailyXp(env, telegramId, day, "message", sourceKey,
-    await getSetting(env, "message_xp", DEFAULT_MESSAGE_XP), "XP за сообщение", m.date);
+  // One Telegram update can award several XP sources. Reuse season/settings reads
+  // across those awards instead of repeating them for every source.
+  await ensureActiveSeason(env, m.date);
+  const [messageXp, dailyXpCap] = await Promise.all([
+    getSetting(env, "message_xp", DEFAULT_MESSAGE_XP),
+    getSetting(env, "daily_xp_cap", DEFAULT_DAILY_CAP)
+  ]);
+  const xpContext = { seasonEnsured: true, dailyCap: dailyXpCap };
 
-  // Daily activity and message-count milestones share the same 200 XP daily cap.
-  await awardDailyXp(env, telegramId, day, "daily_activity", day, 15, "Ежедневная активность", m.date);
+  await awardDailyXp(env, telegramId, day, "message", sourceKey,
+    messageXp, "XP за сообщение", m.date, xpContext);
+
+  // Daily activity and message-count milestones share the same daily cap.
+  await awardDailyXp(env, telegramId, day, "daily_activity", day, 15, "Ежедневная активность", m.date, xpContext);
+  // Milestone rewards stop at 100 messages, so counting beyond that is unnecessary.
   const dailyCountRow = await env.DB.prepare(
-    "SELECT COUNT(*) AS count FROM message_events WHERE telegram_id = ? AND event_day = ?"
+    "SELECT COUNT(*) AS count FROM (SELECT 1 FROM message_events WHERE telegram_id = ? AND event_day = ? LIMIT 100)"
   ).bind(telegramId, day).first<{ count: number }>();
   const dailyCount = dailyCountRow?.count ?? 0;
   const milestones = dailyMessageMilestones(dailyCount);
   for (const milestone of milestones) {
     await awardDailyXp(env, telegramId, day, "message_milestone",
-      `${milestone.sourceKey}:${day}`, milestone.amount, milestone.note, m.date);
+      `${milestone.sourceKey}:${day}`, milestone.amount, milestone.note, m.date, xpContext);
   }
-  if (streak === 7) await awardDailyXp(env, telegramId, day, "streak_milestone", `7:${day}`, 50, "Серия 7 дней", m.date);
-  if (streak === 30) await awardDailyXp(env, telegramId, day, "streak_milestone", `30:${day}`, 200, "Серия 30 дней", m.date);
+  if (streak === 7) await awardDailyXp(env, telegramId, day, "streak_milestone", `7:${day}`, 50, "Серия 7 дней", m.date, xpContext);
+  if (streak === 30) await awardDailyXp(env, telegramId, day, "streak_milestone", `30:${day}`, 200, "Серия 30 дней", m.date, xpContext);
 
   if (count === 1) await grantAchievement(env, telegramId, "first_message", m.date);
   if (count >= 100) await grantAchievement(env, telegramId, "messages_100", m.date);
@@ -729,11 +746,30 @@ async function claimDailyReward(env: Env, telegramId: string, now: number): Prom
     .bind(telegramId).first();
   if (!existing) return "Сначала напиши сообщение в основной группе, чтобы создать профиль.";
 
-  const recentClaims = await env.DB.prepare(`SELECT reward_day FROM daily_rewards
-    WHERE telegram_id = ? AND reward_type = 'daily_claim'
-    ORDER BY reward_day DESC LIMIT 10000`).bind(telegramId).all<{ reward_day: string }>();
-  const claimDays = (recentClaims.results ?? []).map(row => row.reward_day);
-  if (claimDays[0] === day) {
+  // Read only today's claim and the uninterrupted streak. The recursive query
+  // stops at the first missing day instead of loading up to 10,000 history rows.
+  const claimState = await env.DB.prepare(`WITH RECURSIVE claim_streak(reward_day, streak) AS (
+      SELECT date(?, '-1 day'), 1
+      WHERE EXISTS (
+        SELECT 1 FROM daily_rewards
+        WHERE telegram_id = ? AND reward_type = 'daily_claim' AND reward_day = date(?, '-1 day')
+      )
+      UNION ALL
+      SELECT date(claim_streak.reward_day, '-1 day'), claim_streak.streak + 1
+      FROM claim_streak
+      WHERE EXISTS (
+        SELECT 1 FROM daily_rewards
+        WHERE telegram_id = ? AND reward_type = 'daily_claim'
+          AND reward_day = date(claim_streak.reward_day, '-1 day')
+      )
+    )
+    SELECT
+      EXISTS (SELECT 1 FROM daily_rewards
+        WHERE telegram_id = ? AND reward_type = 'daily_claim' AND reward_day = ?) AS claimed_today,
+      COALESCE((SELECT MAX(streak) FROM claim_streak), 0) AS consecutive_days`)
+    .bind(day, telegramId, day, telegramId, telegramId, day)
+    .first<{ claimed_today: number; consecutive_days: number }>();
+  if (claimState?.claimed_today) {
     // Recover safely if a previous request stored the claim but was interrupted before XP credit.
     const saved = await env.DB.prepare(`SELECT xp_amount FROM daily_rewards
       WHERE telegram_id = ? AND reward_day = ? AND reward_type = 'daily_claim'`)
@@ -743,7 +779,7 @@ async function claimDailyReward(env: Env, telegramId: string, now: number): Prom
     return recovered > 0 ? `Награда восстановлена: +${recovered} XP.` : "Ежедневная награда уже получена сегодня.";
   }
 
-  const streak = nextDailyClaimStreak(day, claimDays);
+  const streak = (claimState?.consecutive_days ?? 0) + 1;
   const amount = dailyRewardAmount(streak);
   const inserted = await env.DB.prepare(`INSERT OR IGNORE INTO daily_rewards
     (telegram_id, reward_day, reward_type, xp_amount, created_at)
