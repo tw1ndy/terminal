@@ -8,6 +8,13 @@ const app = new Hono<{ Bindings: Env }>();
 const DEFAULT_MESSAGE_XP = 3;
 const DEFAULT_DAILY_CAP = 200;
 
+// Worker isolates are reused across many Telegram updates. Cache small, stable
+// settings briefly to avoid reading the same D1 rows for every message.
+const SETTING_CACHE_TTL_MS = 15_000;
+const settingCache = new Map<string, { expiresAt: number; value: unknown }>();
+const SEASON_CHECK_TTL_MS = 15_000;
+let seasonCheckExpiresAt = 0;
+
 function moscowDay(unixSeconds: number): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Europe/Moscow", year: "numeric", month: "2-digit", day: "2-digit"
@@ -17,10 +24,17 @@ function moscowDay(unixSeconds: number): string {
 }
 
 async function getSetting<T>(env: Env, key: string, fallback: T): Promise<T> {
+  const cached = settingCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.value as T;
+
   const row = await env.DB.prepare("SELECT value_json FROM settings WHERE key = ?").bind(key)
     .first<{ value_json: string }>();
-  if (!row) return fallback;
-  try { return JSON.parse(row.value_json) as T; } catch { return fallback; }
+  let value = fallback;
+  if (row) {
+    try { value = JSON.parse(row.value_json) as T; } catch { value = fallback; }
+  }
+  settingCache.set(key, { value, expiresAt: Date.now() + SETTING_CACHE_TTL_MS });
+  return value;
 }
 
 function moscowStartOfDay(day: string): number {
@@ -135,9 +149,17 @@ async function awardClosedSeasonRewards(env: Env, now: number): Promise<void> {
   }
 }
 async function ensureActiveSeason(env: Env, now: number): Promise<void> {
+  // Season rollover is checked at most once per isolate per 15 seconds.
+  // This avoids repeating several D1 reads for every ordinary chat message.
+  if (seasonCheckExpiresAt > Date.now()) return;
+
   const active = await env.DB.prepare("SELECT id, ends_at FROM seasons WHERE status = 'active' ORDER BY id DESC LIMIT 1")
     .first<{ id: number; ends_at: number }>();
-  if (active && active.ends_at > now) { await awardClosedSeasonRewards(env, now); return; }
+  if (active && active.ends_at > now) {
+    await awardClosedSeasonRewards(env, now);
+    seasonCheckExpiresAt = Date.now() + SEASON_CHECK_TTL_MS;
+    return;
+  }
 
   const seasonDays = await getSetting(env, "season_days", 30);
   const duration = Math.max(1, Math.min(90, Number(seasonDays) || 30)) * 86400;
@@ -163,6 +185,7 @@ async function ensureActiveSeason(env: Env, now: number): Promise<void> {
     env.DB.prepare("UPDATE xp_wallets SET season_xp = 0 WHERE changes() = 1")
   ]);
   await awardClosedSeasonRewards(env, now);
+  seasonCheckExpiresAt = Date.now() + SEASON_CHECK_TTL_MS;
 }
 
 /** Grants XP once per source and applies the shared daily cap atomically in SQL. */
