@@ -702,7 +702,11 @@ async function recordGroupMessage(env: Env, update: TelegramUpdate): Promise<voi
   ]);
   const eventStats = await env.DB.prepare(`SELECT message_count_snapshot, streak_snapshot, daily_message_count_snapshot
     FROM message_events WHERE chat_id = ? AND message_id = ?`)
-    .bind(chatId, messageId).first<{ message_count_snapshot: number | null; streak_snapshot: number | null }>();
+    .bind(chatId, messageId).first<{
+      message_count_snapshot: number | null;
+      streak_snapshot: number | null;
+      daily_message_count_snapshot: number | null;
+    }>();
   const count = eventStats?.message_count_snapshot ?? 0;
   const streak = eventStats?.streak_snapshot ?? 0;
   await detectFlood(env, telegramId, m.chat.id, m.date, messageHash);
