@@ -7,7 +7,7 @@ on:
         description: Apply pending migrations to nk-activity-db before deployment
         required: true
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: read
@@ -38,14 +38,17 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: python3 scripts/check_migrations.py
+      # Deploy the Worker independently of D1's daily row-read quota.
+      # D1 migrations are an explicit follow-up because index creation can scan
+      # large existing tables and exhaust the free-tier quota.
+      - name: Deploy Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npm run deploy
       - name: Apply D1 migrations
         if: ${{ inputs.apply_migrations }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npm run db:remote
-      - name: Deploy Worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npm run deploy
