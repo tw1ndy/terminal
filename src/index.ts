@@ -195,6 +195,15 @@ async function awardDailyXp(
   context?: { seasonEnsured?: boolean; dailyCap?: number }
 ): Promise<number> {
   if (requestedAmount <= 0) return 0;
+
+  // Most calls after the first message of a day are duplicate daily sources
+  // (especially daily_activity). Check the unique ledger key before running the
+  // multi-statement XP batch; this avoids repeated scans and writes per message.
+  const alreadyAwarded = await env.DB.prepare(
+    "SELECT 1 AS found FROM xp_transactions WHERE telegram_id = ? AND transaction_type = ? AND source_id = ?"
+  ).bind(telegramId, sourceType, sourceKey).first<{ found: number }>();
+  if (alreadyAwarded) return 0;
+
   if (!context?.seasonEnsured) await ensureActiveSeason(env, createdAt);
   const cap = context?.dailyCap ?? await getSetting(env, "daily_xp_cap", DEFAULT_DAILY_CAP);
   // Keep ledger insertion, transaction creation and wallet credit in one D1 batch.
