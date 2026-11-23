@@ -196,14 +196,6 @@ async function awardDailyXp(
 ): Promise<number> {
   if (requestedAmount <= 0) return 0;
 
-  // Most calls after the first message of a day are duplicate daily sources
-  // (especially daily_activity). Check the unique ledger key before running the
-  // multi-statement XP batch; this avoids repeated scans and writes per message.
-  const alreadyAwarded = await env.DB.prepare(
-    "SELECT 1 AS found FROM xp_transactions WHERE telegram_id = ? AND transaction_type = ? AND source_id = ?"
-  ).bind(telegramId, sourceType, sourceKey).first<{ found: number }>();
-  if (alreadyAwarded) return 0;
-
   if (!context?.seasonEnsured) await ensureActiveSeason(env, createdAt);
   const cap = context?.dailyCap ?? await getSetting(env, "daily_xp_cap", DEFAULT_DAILY_CAP);
   // Keep ledger insertion, transaction creation and wallet credit in one D1 batch.
@@ -756,7 +748,12 @@ async function recordGroupMessage(env: Env, update: TelegramUpdate): Promise<voi
     messageXp, "XP за сообщение", m.date, xpContext);
 
   // Daily activity and message-count milestones share the same daily cap.
-  await awardDailyXp(env, telegramId, day, "daily_activity", day, 15, "Ежедневная активность", m.date, xpContext);
+  // Award daily activity only on the first message of the Moscow day.
+  // The ledger already makes this idempotent, but skipping the call here avoids
+  // an unnecessary D1 batch for every subsequent message.
+  if (dailyCount === 1) {
+    await awardDailyXp(env, telegramId, day, "daily_activity", day, 15, "Ежедневная активность", m.date, xpContext);
+  }
   // The daily counter is maintained atomically with user_stats and stored on the event.
   const dailyCount = Math.min(eventStats?.daily_message_count_snapshot ?? 0, 100);
   const milestones = dailyMessageMilestones(dailyCount);
