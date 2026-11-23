@@ -744,6 +744,9 @@ async function recordGroupMessage(env: Env, update: TelegramUpdate): Promise<voi
   ]);
   const xpContext = { seasonEnsured: true, dailyCap: dailyXpCap };
 
+  // The daily counter is maintained atomically with user_stats and stored on the event.
+  const dailyCount = Math.min(eventStats?.daily_message_count_snapshot ?? 0, 100);
+
   await awardDailyXp(env, telegramId, day, "message", sourceKey,
     messageXp, "XP за сообщение", m.date, xpContext);
 
@@ -754,8 +757,6 @@ async function recordGroupMessage(env: Env, update: TelegramUpdate): Promise<voi
   if (dailyCount === 1) {
     await awardDailyXp(env, telegramId, day, "daily_activity", day, 15, "Ежедневная активность", m.date, xpContext);
   }
-  // The daily counter is maintained atomically with user_stats and stored on the event.
-  const dailyCount = Math.min(eventStats?.daily_message_count_snapshot ?? 0, 100);
   const milestones = dailyMessageMilestones(dailyCount);
   for (const milestone of milestones) {
     await awardDailyXp(env, telegramId, day, "message_milestone",
