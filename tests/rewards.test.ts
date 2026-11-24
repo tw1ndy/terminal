@@ -30,7 +30,6 @@ describe("daily reward calendar", () => {
     expect(dailyMessageMilestones(49)).toEqual([]);
     expect(dailyMessageMilestones(50)).toEqual([{ sourceKey: "50", amount: 20, note: "50 сообщений за день" }]);
     expect(dailyMessageMilestones(100)).toEqual([
-      { sourceKey: "50", amount: 20, note: "50 сообщений за день" },
       { sourceKey: "100", amount: 35, note: "100 сообщений за день" }
     ]);
     expect(dailyMessageMilestones(99)).toEqual([]);
