@@ -1,6 +1,9 @@
 name: Deploy НК Activity
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       apply_migrations:
