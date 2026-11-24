@@ -763,21 +763,27 @@ async function recordGroupMessage(env: Env, update: TelegramUpdate): Promise<voi
   if (dailyCount === 1) {
     await awardDailyXp(env, telegramId, day, "daily_activity", day, 15, "Ежедневная активность", m.date, xpContext);
   }
-  const milestones = dailyMessageMilestones(dailyCount);
+  const milestones = dailyMessageMilestones(rawDailyCount);
   for (const milestone of milestones) {
     await awardDailyXp(env, telegramId, day, "message_milestone",
       `${milestone.sourceKey}:${day}`, milestone.amount, milestone.note, m.date, xpContext);
   }
-  if (streak === 7) await awardDailyXp(env, telegramId, day, "streak_milestone", `7:${day}`, 50, "Серия 7 дней", m.date, xpContext);
-  if (streak === 30) await awardDailyXp(env, telegramId, day, "streak_milestone", `30:${day}`, 200, "Серия 30 дней", m.date, xpContext);
+  // Streaks can only increase on a member's first message of the day.
+  // Avoid retrying idempotent XP/achievement writes on every later message.
+  if (dailyCount === 1 && streak === 7) {
+    await awardDailyXp(env, telegramId, day, "streak_milestone", `7:${day}`, 50, "Серия 7 дней", m.date, xpContext);
+    await grantAchievement(env, telegramId, "streak_7", m.date);
+  }
+  if (dailyCount === 1 && streak === 30) {
+    await awardDailyXp(env, telegramId, day, "streak_milestone", `30:${day}`, 200, "Серия 30 дней", m.date, xpContext);
+    await grantAchievement(env, telegramId, "streak_30", m.date);
+  }
 
   if (count === 1) await grantAchievement(env, telegramId, "first_message", m.date);
-  if (count >= 100) await grantAchievement(env, telegramId, "messages_100", m.date);
-  if (count >= 500) await grantAchievement(env, telegramId, "messages_500", m.date);
-  if (count >= 1000) await grantAchievement(env, telegramId, "messages_1000", m.date);
-  if (count >= 5000) await grantAchievement(env, telegramId, "messages_5000", m.date);
-  if (streak >= 7) await grantAchievement(env, telegramId, "streak_7", m.date);
-  if (streak >= 30) await grantAchievement(env, telegramId, "streak_30", m.date);
+  if (count === 100) await grantAchievement(env, telegramId, "messages_100", m.date);
+  if (count === 500) await grantAchievement(env, telegramId, "messages_500", m.date);
+  if (count === 1000) await grantAchievement(env, telegramId, "messages_1000", m.date);
+  if (count === 5000) await grantAchievement(env, telegramId, "messages_5000", m.date);
 }
 
 async function claimDailyReward(env: Env, telegramId: string, now: number): Promise<string> {
