@@ -763,7 +763,7 @@ async function recordGroupMessage(env: Env, update: TelegramUpdate): Promise<voi
   if (dailyCount === 1) {
     await awardDailyXp(env, telegramId, day, "daily_activity", day, 15, "Ежедневная активность", m.date, xpContext);
   }
-  const milestones = dailyMessageMilestones(dailyCount);
+  const milestones = dailyMessageMilestones(rawDailyCount);
   for (const milestone of milestones) {
     await awardDailyXp(env, telegramId, day, "message_milestone",
       `${milestone.sourceKey}:${day}`, milestone.amount, milestone.note, m.date, xpContext);
