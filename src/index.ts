@@ -10,9 +10,9 @@ const DEFAULT_DAILY_CAP = 200;
 
 // Worker isolates are reused across many Telegram updates. Cache small, stable
 // settings briefly to avoid reading the same D1 rows for every message.
-const SETTING_CACHE_TTL_MS = 15_000;
+const SETTING_CACHE_TTL_MS = 60_000;
 const settingCache = new Map<string, { expiresAt: number; value: unknown }>();
-const SEASON_CHECK_TTL_MS = 15_000;
+const SEASON_CHECK_TTL_MS = 60_000;
 let seasonCheckExpiresAt = 0;
 
 function moscowDay(unixSeconds: number): string {
@@ -733,7 +733,6 @@ async function recordGroupMessage(env: Env, update: TelegramUpdate): Promise<voi
     }>();
   const count = eventStats?.message_count_snapshot ?? 0;
   const streak = eventStats?.streak_snapshot ?? 0;
-  await detectFlood(env, telegramId, m.chat.id, m.date, messageHash);
 
   // One Telegram update can award several XP sources. Reuse season/settings reads
   // across those awards instead of repeating them for every source.
@@ -745,7 +744,14 @@ async function recordGroupMessage(env: Env, update: TelegramUpdate): Promise<voi
   const xpContext = { seasonEnsured: true, dailyCap: dailyXpCap };
 
   // The daily counter is maintained atomically with user_stats and stored on the event.
-  const dailyCount = Math.min(eventStats?.daily_message_count_snapshot ?? 0, 100);
+  const rawDailyCount = eventStats?.daily_message_count_snapshot ?? 0;
+  const dailyCount = Math.min(rawDailyCount, 100);
+
+  // Run relatively expensive anti-flood scans once per five messages per user.
+  // This keeps detection active while cutting routine anti-fraud reads by about 80%.
+  if (rawDailyCount > 0 && rawDailyCount % 5 === 0) {
+    await detectFlood(env, telegramId, m.chat.id, m.date, messageHash);
+  }
 
   await awardDailyXp(env, telegramId, day, "message", sourceKey,
     messageXp, "XP за сообщение", m.date, xpContext);
@@ -1221,6 +1227,8 @@ app.post("/api/admin/settings", async c => {
       .bind(JSON.stringify(levelThresholds), now, actorId),
     c.env.DB.prepare("INSERT INTO settings (key, value_json, updated_at, updated_by) VALUES ('season_reward_schedule', ?, ?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at, updated_by = excluded.updated_by").bind(JSON.stringify(seasonRewardSchedule), now, actorId)
   ]);
+  settingCache.clear();
+  seasonCheckExpiresAt = 0;
   await logAdminAction(c.env, actorId, "settings_updated", null,
     { messageXp, dailyXpCap, seasonDays, configuredLevels: Object.keys(levelThresholds).length, seasonRewardPlaces: Object.keys(seasonRewardSchedule).length }, now);
   return c.json({ ok: true });
